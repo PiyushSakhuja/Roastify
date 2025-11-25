@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Roast Bot</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Spotify-inspired dark theme and font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        :root {
+            --spotify-green: #1DB954;
+            --dark-gray: #121212;
+            --medium-gray: #181818;
+            --light-text: #FFFFFF;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark-gray);
+            color: var(--light-text);
+        }
+        .card {
+            background-color: var(--medium-gray);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+        .btn-primary {
+            background-color: var(--spotify-green);
+            color: var(--dark-gray);
+            font-weight: 700;
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+        .btn-primary:hover {
+            background-color: #1ed760;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(29, 185, 84, 0.4);
+        }
+        /* Custom loader for visual appeal */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top-color: var(--spotify-green);
+            border-left-color: var(--spotify-green);
+            border-radius: 50%;
+            width: 3rem;
+            height: 3rem;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- Main Container -->
+    <div id="app" class="w-full max-w-lg mx-auto p-6 md:p-10 card rounded-xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-extrabold text-white mb-2">
+                <span class="text-[var(--spotify-green)]">Sound</span> Roast Bot
+            </h1>
+            <p id="app-status" class="text-gray-400">Log in to Spotify to have your musical taste aggressively critiqued by an AI.</p>
+        </header>
+
+        <!-- Initial Button & Loading State -->
+        <div id="initial-state" class="text-center">
+            <button id="login-btn" class="btn-primary w-full py-3 rounded-full flex items-center justify-center transition duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M11.594 13.914c-.035.109-.17.165-.297.114-1.52-.19-3.242-.266-5.004-.268-.59 0-1.168.03-1.729.091-.122.013-.243-.038-.285-.148a.426.426 0 0 1-.004-.15V5.539c.306-.117.653-.189 1.026-.239 1.037-.14 2.126-.207 3.23-.209 1.492 0 2.915.083 4.256.248.169.02.247.103.247.253v8.51c.002.109-.1.173-.207.155Z"/>
+                    <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                </svg>
+                Log In with Spotify
+            </button>
+        </div>
+
+        <!-- Loading & Roast Result Area -->
+        <div id="results-area" class="hidden">
+            <div id="loading" class="flex flex-col items-center justify-center p-8 text-center">
+                <div class="spinner mb-4"></div>
+                <p id="loading-message" class="text-lg font-semibold text-gray-300">Authenticating with Spotify...</p>
+                <p class="text-sm text-gray-500 mt-1">Fetching data requires communication with your secure Node.js server.</p>
+            </div>
+
+            <div id="roast-output" class="hidden p-6 card rounded-lg mt-6">
+                <h2 class="text-2xl font-bold mb-4 text-[var(--spotify-green)]">The Verdict is In:</h2>
+                <div id="roast-text" class="text-gray-300 leading-relaxed italic mb-4 text-lg"></div>
+                <div id="source-data" class="pt-4 mt-4 border-t border-gray-700">
+                    <h3 class="text-base font-semibold text-gray-400 mb-2">User Data (The Evidence):</h3>
+                    <ul class="text-sm text-gray-500 space-y-1">
+                        <!-- Content inserted here -->
+                    </ul>
+                </div>
+            </div>
+            
+            <div id="error-output" class="hidden p-4 bg-red-900/50 border border-red-700 rounded-lg mt-6">
+                <p id="error-message" class="text-red-300 font-semibold">An unexpected error occurred. Please try the login process again.</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- CONFIGURATION FOR REAL SPOTIFY API ---
+        const CLIENT_ID = '6c8912cc85ba4a4d8b15b1f12bdc0de9'; 
+        // REDIRECT_URI MUST match what's set in your Spotify App dashboard and server.js
+        const REDIRECT_URI = window.location.origin + window.location.pathname; 
+        const SCOPES = 'user-top-read user-read-private'; // Permissions needed
+        
+        // BASE URL for the local backend server (where server.js is running)
+        // NOTE FOR DEPLOYMENT: You MUST change this to your deployed backend URL (e.g., https://your-server.render.com)
+        const BACKEND_URL = 'http://localhost:8888'; 
+
+        // --- DEPRECATED: GEMINI API CONFIG IS NOW HANDLED BY BACKEND ---
+        // The frontend no longer touches the Gemini API, ensuring the key is kept secure on the server.
+
+        // --- DOM Elements ---
+        const initialStateEl = document.getElementById('initial-state');
+        const loginBtn = document.getElementById('login-btn');
+        const resultsAreaEl = document.getElementById('results-area');
+        const loadingEl = document.getElementById('loading');
+        const loadingMessageEl = document.getElementById('loading-message');
+        const roastOutputEl = document.getElementById('roast-output');
+        const roastTextEl = document.getElementById('roast-text');
+        const sourceDataEl = document.getElementById('source-data').querySelector('ul');
+        const errorOutputEl = document.getElementById('error-output');
+        const errorMessageEl = document.getElementById('error-message');
+        const appStatusEl = document.getElementById('app-status');
+
+        // --- Utility Functions ---
+
+        function generateRandomString(length) {
+            let text = '';
+            const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            for (let i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        }
+
+        /**
+         * Robust fetch utility with exponential backoff for retries.
+         */
+        async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        // Handle rate limiting (429) or other errors
+                        if (response.status === 429 && i < retries - 1) {
+                            await new Promise(resolve => setTimeout(resolve, delay * 2 ** i));
+                            continue;
+                        }
+                        const errorBody = await response.text();
+                        throw new Error(`API call failed with status: ${response.status}. Response: ${errorBody}`);
+                    }
+                    return response;
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay * 2 ** i));
+                }
+            }
+        }
+
+        // --- CORE SPOTIFY & AI LOGIC ---
+
+        function displayError(message) {
+            loadingEl.classList.add('hidden');
+            roastOutputEl.classList.add('hidden');
+            errorOutputEl.classList.remove('hidden');
+            errorMessageEl.innerHTML = message;
+            appStatusEl.textContent = "Authorization Failed";
+        }
+
+        function displayResults(roastText, data) {
+            loadingEl.classList.add('hidden');
+            errorOutputEl.classList.add('hidden');
+            roastOutputEl.classList.remove('hidden');
+            roastTextEl.textContent = roastText;
+            appStatusEl.textContent = "Roast Delivered.";
+
+            sourceDataEl.innerHTML = `
+                <li class="text-white"><span class="font-semibold text-[var(--spotify-green)]">Top Artists:</span> ${data.topArtists.join(', ')}</li>
+                <li class="text-white"><span class="font-semibold text-[var(--spotify-green)]">Top Tracks:</span> ${data.topTracks.join(', ')}</li>
+                <li class="text-white"><span class="font-semibold text-[var(--spotify-green)]">Top Genres:</span> ${data.topGenres.join(', ')}</li>
+                <li class="text-white"><span class="font-semibold text-[var(--spotify-green)]">Playtime Data:</span> ${data.totalPlaytimeHours}</li>
+            `;
+        }
+        
+        /**
+         * Step 1: Initiates the Spotify OAuth flow by redirecting the user.
+         */
+        function initiateSpotifyLogin() {
+            const state = generateRandomString(16);
+            // Use localStorage for state check (OAuth security measure)
+            localStorage.setItem('spotify_auth_state', state);
+
+            const authUrl = new URL("https://accounts.spotify.com/authorize");
+            
+            authUrl.searchParams.append('response_type', 'code');
+            authUrl.searchParams.append('client_id', CLIENT_ID);
+            authUrl.searchParams.append('scope', SCOPES);
+            authUrl.searchParams.append('redirect_uri', REDIRECT_URI);
+            authUrl.searchParams.append('state', state);
+
+            window.location.href = authUrl.toString();
+        }
+
+        /**
+         * Step 2: Exchanges the authorization code for an Access Token by calling the secure backend server.
+         * The backend MUST be running at http://localhost:8888.
+         * @returns {Promise<string>} The Spotify Access Token.
+         */
+        async function exchangeCodeForToken(code) {
+            loadingMessageEl.textContent = "Exchanging Authorization Code for Access Token...";
+
+            const response = await fetchWithRetry(`${BACKEND_URL}/api/token-exchange`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Crucially, send the code AND the redirect URI to the backend
+                body: JSON.stringify({ code: code, redirect_uri: REDIRECT_URI })
+            });
+
+            const data = await response.json();
+
+            if (data.access_token) {
+                return data.access_token;
+            } else {
+                // If the backend returned a JSON error (e.g., 400 or 500)
+                throw new Error(data.details || data.error || 'Token exchange failed. Check backend server console.');
+            }
+        }
+
+        /**
+         * Step 3: Fetches real data from Spotify using the Access Token.
+         */
+        async function fetchSpotifyData(token) {
+            loadingMessageEl.textContent = "Fetching your Top Tracks and Artists...";
+
+            // Fetch Top 5 Artists (Long Term)
+            const artistsResponse = await fetchWithRetry("https://api.spotify.com/v1/me/top/artists?limit=5&time_range=long_term", {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const artistsData = await artistsResponse.json();
+            const topArtists = artistsData.items ? artistsData.items.map(item => item.name) : ["No Top Artists Found"];
+            
+            // Fetch Top 5 Tracks (Long Term)
+            const tracksResponse = await fetchWithRetry("https://api.spotify.com/v1/me/top/tracks?limit=5&time_range=long_term", {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const tracksData = await tracksResponse.json();
+            const topTracks = tracksData.items ? tracksData.items.map(item => `${item.name} by ${item.artists[0].name}`) : ["No Top Tracks Found"];
+
+            // Determine Top Genres from artists
+            const allGenres = artistsData.items ? artistsData.items.flatMap(artist => artist.genres).filter((v, i, a) => a.indexOf(v) === i) : ["Unknown"];
+            const topGenres = allGenres.slice(0, 5);
+
+            // Placeholder for total playtime
+            const playtimePlaceholder = "Not tracked (Requires complex API polling)";
+
+            return {
+                topArtists: topArtists,
+                topTracks: topTracks,
+                topGenres: topGenres,
+                totalPlaytimeHours: playtimePlaceholder
+            };
+        }
+
+        /**
+         * Step 4: Calls the backend endpoint to generate a roast using the Gemini API (which is now hidden on the server).
+         * This simplifies the frontend's job and keeps the API key secure.
+         */
+        async function generateRoast(data) {
+            loadingMessageEl.textContent = "Asking the backend to summon the AI critic...";
+            const dataString = `Top Artists: ${data.topArtists.join(', ')}. Top Tracks: ${data.topTracks.join(', ')}. Top Genres: ${data.topGenres.join(', ')}.`;
+
+            const response = await fetchWithRetry(`${BACKEND_URL}/api/roast`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dataString: dataString }) // Send the raw Spotify data string
+            });
+
+            const result = await response.json();
+            
+            if (result.roast) {
+                return result.roast;
+            } else {
+                // The backend returned an error JSON or failed to return 'roast'
+                throw new Error(result.error || "Backend failed to return the roast text.");
+            }
+        }
+
+
+        /**
+         * Step 2 (cont.): Handles the redirect back from Spotify and orchestrates the data flow.
+         */
+        async function handleSpotifyCallback() {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            const state = params.get('state');
+            const storedState = localStorage.getItem('spotify_auth_state');
+
+            // Clear URL parameters to clean up the address bar
+            history.replaceState(null, '', window.location.pathname);
+
+            if (params.get('error')) {
+                displayError(`Spotify authentication failed: ${params.get('error_description') || 'User denied access or an unknown error occurred.'}`);
+                return;
+            }
+
+            if (!code || state !== storedState) {
+                // Not a valid callback or state mismatch - do nothing and let the initial state show
+                return; 
+            }
+
+            // In the callback state, hide initial button and show loading
+            initialStateEl.classList.add('hidden');
+            resultsAreaEl.classList.remove('hidden');
+            loadingEl.classList.remove('hidden');
+
+            try {
+                // 1. Exchange code for token via secure backend
+                const accessToken = await exchangeCodeForToken(code); 
+                
+                // 2. Fetch data from Spotify using the token
+                const spotifyData = await fetchSpotifyData(accessToken);
+                
+                // 3. Generate the roast via the new backend endpoint
+                const roastText = await generateRoast(spotifyData);
+                
+                // 4. Display results
+                displayResults(roastText, spotifyData);
+
+            } catch (error) {
+                console.error("Full authentication flow failed:", error);
+                // Ensure the error message specifically mentions the server for clarity
+                displayError(`Authentication and Data Fetching failed: ${error.message}. Ensure your Node.js server is running and accessible at ${BACKEND_URL} and its environment variables are set.`);
+            } finally {
+                localStorage.removeItem('spotify_auth_state');
+            }
+        }
+
+        // --- Initialization ---
+
+        // Check if we are returning from Spotify (i.e., this is the callback page)
+        if (window.location.search.includes('code=')) {
+            handleSpotifyCallback();
+        } else {
+            // Not a callback, bind the login button
+            loginBtn.addEventListener('click', initiateSpotifyLogin);
+        }
+
+    </script>
+</body>
+</html>
