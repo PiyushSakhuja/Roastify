@@ -1,0 +1,62 @@
+/* src/pages/spotify-roast.css
+ *
+ * Faithful port of the original static page's <style> block
+ * (frontend/index.html from the pre-dashboard version of this project).
+ * Scoped under .spotify-roast-page so it can't clash with the dashboard's
+ * design tokens (--color-ink, --color-verdict, etc.) elsewhere in the app.
+ */
+
+.spotify-roast-page {
+  --spotify-green: #1db954;
+  --dark-gray: #121212;
+  --medium-gray: #181818;
+  --light-text: #ffffff;
+
+  min-height: 100vh;
+  background-color: var(--dark-gray);
+  color: var(--light-text);
+  font-family: "Inter", sans-serif;
+}
+
+.spotify-roast-page .card {
+  background-color: var(--medium-gray);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.spotify-roast-page .btn-primary {
+  background-color: var(--spotify-green);
+  color: var(--dark-gray);
+  font-weight: 700;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.spotify-roast-page .btn-primary:hover {
+  background-color: #1ed760;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.4);
+}
+
+.spotify-roast-page .btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.spotify-roast-page .spinner {
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: var(--spotify-green);
+  border-left-color: var(--spotify-green);
+  border-radius: 50%;
+  width: 3rem;
+  height: 3rem;
+  animation: spotify-roast-spin 1s linear infinite;
+}
+
+@keyframes spotify-roast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
