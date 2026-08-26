@@ -61,12 +61,18 @@ export function RoastModal({ platform, onClose }: RoastModalProps) {
 
               <div className="mb-4 flex items-center gap-3">
                 <div
-                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-line text-[var(--accent)]"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-line"
                   style={{
                     background: `color-mix(in srgb, var(--accent) 14%, transparent)`,
                   }}
                 >
-                  <platform.icon className="h-5 w-5" />
+                  {/* Real logo — consistent with cards and 3D scene. */}
+                  <img
+                    src={platform.logo}
+                    alt={`${platform.name} logo`}
+                    className="h-7 w-7 select-none object-contain"
+                    draggable={false}
+                  />
                 </div>
                 <div>
                   <h3 className="font-display text-lg uppercase tracking-wide text-paper">

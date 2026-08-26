@@ -22,7 +22,6 @@ export function PlatformCard({
   onConnect,
   onRoast,
 }: PlatformCardProps) {
-  const Icon = platform.icon;
   const isSealed = platform.connectionState === "coming-soon";
   const isConnected = platform.connectionState === "connected";
   const exhibitNumber = String(index + 1).padStart(2, "0");
@@ -36,14 +35,17 @@ export function PlatformCard({
       style={{ ["--accent" as string]: `var(--color-${platform.accent})` }}
       className={cx(
         "group relative flex flex-col overflow-hidden rounded-2xl border p-5",
-        "bg-charcoal transition-all duration-300",
+        "bg-charcoal/80 backdrop-blur-sm transition-all duration-300",
         isSealed
           ? "border-line/60 opacity-60"
           : "border-line hover:border-[var(--accent)]/50 hover:-translate-y-1",
         selected && "border-acid/70 ring-1 ring-acid/40"
       )}
     >
-      {/* Ambient corner glow on hover */}
+      {/* Subtle top sheen — premium card feel, not a glow. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)]/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+
+      {/* Ambient corner glow on hover — only when available. */}
       {!isSealed && (
         <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[var(--accent)]/0 blur-3xl transition-all duration-500 group-hover:bg-[var(--accent)]/25" />
       )}
@@ -82,12 +84,20 @@ export function PlatformCard({
         {!selectable && <ConnectionButton state={platform.connectionState} accent={platform.accent} onConnect={() => onConnect?.(platform.id)} />}
       </div>
 
-      {/* Icon */}
+      {/* Real platform logo — same PNG asset the 3D scene uses. */}
       <div
-        className="relative mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-line text-[var(--accent)]"
+        className="relative mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-line"
         style={{ background: `color-mix(in srgb, var(--accent) 12%, transparent)` }}
       >
-        <Icon className="h-6 w-6" />
+        {/* Logo glow on hover — accent color only, never the brand color tinted. */}
+        <div className="pointer-events-none absolute inset-0 rounded-xl opacity-0 transition-opacity duration-300 group-hover:opacity-100" style={{ background: `radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%)` }} />
+        <img
+          src={platform.logo}
+          alt={`${platform.name} logo`}
+          loading="lazy"
+          draggable={false}
+          className="relative h-9 w-9 select-none object-contain [image-rendering:auto]"
+        />
       </div>
 
       {/* Title block */}

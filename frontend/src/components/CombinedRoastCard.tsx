@@ -68,7 +68,6 @@ export function CombinedRoastCard({
           <>
             <div className="mb-8 flex flex-wrap justify-center gap-2.5">
               {connectedPlatforms.map((platform) => {
-                const Icon = platform.icon;
                 const isSelected = selected.has(platform.id);
                 return (
                   <button
@@ -85,7 +84,14 @@ export function CombinedRoastCard({
                         : "border-line bg-charcoal text-smoke hover:text-paper"
                     )}
                   >
-                    <Icon className="h-4 w-4 text-[var(--accent)]" />
+                    {/* Real logo — same PNG used in 3D + cards. */}
+                    <img
+                      src={platform.logo}
+                      alt=""
+                      aria-hidden="true"
+                      className="h-4 w-4 select-none object-contain"
+                      draggable={false}
+                    />
                     {platform.name}
                     {isSelected && (
                       <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none">
