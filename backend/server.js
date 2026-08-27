@@ -9,7 +9,7 @@ const rateLimit = require('express-rate-limit');
 const aiProviders = require('./providers');
 const steamPrompt = require('./providers/steamPrompt');
 const steamService = require('./services/steam');
-
+const github = require('./services/github');
 const app = express();
 const PORT = process.env.PORT || 8888;
 
@@ -27,7 +27,12 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
 if (!steamService.isConfigured()) {
     console.warn('WARNING: STEAM_API_KEY is not set. Steam Roast endpoints will return an error until configured.');
 }
-
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+const githubConfigured = Boolean(GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET);
+if (!githubConfigured) {
+    console.warn('GitHub roasting disabled: set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable it (see .env.example).');
+}
 // At least one AI provider must be configured, but which one is flexible.
 const configuredProviders = aiProviders.getConfiguredProviders();
 if (configuredProviders.length === 0) {
@@ -274,6 +279,189 @@ app.post('/api/steam/roast', async (req, res) => {
         res.status(502).json({ error: 'Failed to generate roast.', details: error.message });
     }
 });
+
+
+function requireGitHubConfigured(req, res, next) {
+    if (!githubConfigured) {
+        return res.status(503).json({
+            error: 'GitHub roasting is not configured on this server.',
+            details: 'Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable it.',
+        });
+    }
+    next();
+}
+
+
+
+
+// In-memory cache of already-fetched GitHub data, keyed by access token,
+// so "Roast Me Again" can regenerate without re-hitting GitHub's API or
+// asking the user to log in again. Entries expire after 30 minutes.
+const githubDataCache = new Map();
+const GITHUB_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function cacheGitHubData(token, data) {
+    githubDataCache.set(token, { data, expiresAt: Date.now() + GITHUB_CACHE_TTL_MS });
+}
+
+function getCachedGitHubData(token) {
+    const entry = githubDataCache.get(token);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+        githubDataCache.delete(token);
+        return null;
+    }
+    return entry.data;
+}
+
+// Periodically sweep expired cache entries so this doesn't grow unbounded.
+setInterval(() => {
+    const now = Date.now();
+    for (const [token, entry] of githubDataCache.entries()) {
+        if (now > entry.expiresAt) githubDataCache.delete(token);
+    }
+}, 10 * 60 * 1000).unref();
+
+// --- Endpoint for GitHub OAuth token exchange ---
+app.post('/api/github/token-exchange', requireGitHubConfigured, async (req, res) => {
+    const { code, redirect_uri } = req.body || {};
+
+    if (!code || typeof code !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid authorization code.' });
+    }
+    if (!redirect_uri || typeof redirect_uri !== 'string') {
+        return res.status(400).json({ error: 'Missing redirect_uri in request body.' });
+    }
+
+    try {
+        const accessToken = await github.exchangeCodeForToken(code, redirect_uri);
+        // The frontend needs a handle to reference cached data by without
+        // ever seeing the real GitHub token, so we hand back an opaque
+        // session id instead of the token itself.
+        const sessionId = `gh_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        githubDataCache.set(sessionId, { token: accessToken, expiresAt: Date.now() + GITHUB_CACHE_TTL_MS });
+        res.json({ sessionId });
+    } catch (error) {
+        console.error('Error during GitHub token exchange:', error.response ? error.response.data : error.message);
+        res.status(502).json({
+            error: 'Failed to exchange authorization code for a GitHub access token.',
+            details: error.response?.data?.error_description || error.message,
+        });
+    }
+});
+
+function getGitHubTokenForSession(sessionId) {
+    const entry = githubDataCache.get(sessionId);
+    if (!entry || Date.now() > entry.expiresAt) return null;
+    return entry.token;
+}
+
+// --- Endpoint to fetch the connected user's normalized GitHub profile ---
+app.get('/api/github/profile', requireGitHubConfigured, async (req, res) => {
+    const sessionId = req.query.sessionId;
+    if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'Missing sessionId query parameter.' });
+    }
+
+    const token = getGitHubTokenForSession(sessionId);
+    if (!token) {
+        return res.status(401).json({ error: 'GitHub session expired or invalid. Please reconnect.' });
+    }
+
+    try {
+        const profile = await github.fetchProfile(token);
+        res.json(profile);
+    } catch (error) {
+        handleGitHubApiError(res, error, 'Failed to fetch GitHub profile.');
+    }
+});
+
+// --- Endpoint to fetch the connected user's repositories ---
+app.get('/api/github/repos', requireGitHubConfigured, async (req, res) => {
+    const sessionId = req.query.sessionId;
+    if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'Missing sessionId query parameter.' });
+    }
+
+    const token = getGitHubTokenForSession(sessionId);
+    if (!token) {
+        return res.status(401).json({ error: 'GitHub session expired or invalid. Please reconnect.' });
+    }
+
+    try {
+        const repos = await github.fetchRepositories(token);
+        res.json(repos);
+    } catch (error) {
+        handleGitHubApiError(res, error, 'Failed to fetch GitHub repositories.');
+    }
+});
+
+// --- Endpoint: full flow — fetch profile+repos+activity, normalize, roast ---
+// This is the one the frontend actually calls after token-exchange; the
+// /profile and /repos endpoints above exist per the requested route shape
+// and for any future incremental-loading UI, but /roast is the common path.
+app.post('/api/github/roast', requireGitHubConfigured, async (req, res) => {
+    const { sessionId, provider } = req.body || {};
+
+    if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'Missing sessionId in request body.' });
+    }
+    if (provider !== undefined && typeof provider !== 'string') {
+        return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+
+    const token = getGitHubTokenForSession(sessionId);
+    if (!token) {
+        return res.status(401).json({ error: 'GitHub session expired or invalid. Please reconnect.' });
+    }
+
+    try {
+        // Reuse already-fetched+normalized data if this is a "Roast Me
+        // Again" request, so we don't re-hit GitHub's API unnecessarily.
+        let normalized = getCachedGitHubData(`normalized_${sessionId}`);
+        if (!normalized) {
+            const profile = await github.fetchProfile(token);
+            const [repos, activity] = await Promise.all([
+                github.fetchRepositories(token),
+                github.fetchRecentActivity(profile.login, token),
+            ]);
+            normalized = github.normalizeGitHubData(profile, repos, activity);
+            cacheGitHubData(`normalized_${sessionId}`, normalized);
+        }
+
+        const { roastText, provider: usedProvider } = await aiProviders.generateRoast(
+            normalized,
+            provider || null,
+            'github'
+        );
+
+        res.json({ roastText, provider: usedProvider, profile: normalized });
+    } catch (error) {
+        handleGitHubApiError(res, error, 'Failed to generate GitHub roast.');
+    }
+});
+
+function handleGitHubApiError(res, error, fallbackMessage) {
+    const status = error.response?.status;
+    console.error(fallbackMessage, error.response ? error.response.data : error.message);
+
+    if (status === 401) {
+        return res.status(401).json({ error: 'GitHub session expired or was revoked. Please reconnect.' });
+    }
+    if (status === 403 && error.response?.headers?.['x-ratelimit-remaining'] === '0') {
+        return res.status(429).json({
+            error: 'GitHub API rate limit reached. Please try again in a few minutes.',
+        });
+    }
+    if (status === 404) {
+        return res.status(404).json({ error: 'GitHub profile data not found.' });
+    }
+
+    res.status(502).json({
+        error: fallbackMessage,
+        details: error.response?.data?.message || error.message,
+    });
+}
 
 // --- Health check (useful for deployment platforms) ---
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

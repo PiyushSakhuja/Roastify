@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import { DashboardPage } from "./pages/DashboardPage";
 import { SpotifyRoastPage } from "./pages/SpotifyRoastPage";
 import { SteamRoastPage } from "./pages/SteamRoast";
+import { GitHubRoastPage } from "./pages/GitHubRoast";
 
 export default function App() {
   return (
@@ -9,6 +10,7 @@ export default function App() {
       <Route path="/" element={<DashboardPage />} />
       <Route path="/spotify-roast" element={<SpotifyRoastPage />} />
       <Route path="/steam-roast" element={<SteamRoastPage />} />
+      <Route path="/github-roast" element={<GitHubRoastPage />} />
     </Routes>
   );
 }

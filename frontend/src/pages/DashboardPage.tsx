@@ -27,6 +27,13 @@ export function DashboardPage() {
       navigate("/spotify-roast");
       return;
     }
+     if (id === "github") {
+      // Same pattern as Spotify — a real in-app route owns the actual
+      // GitHub OAuth flow (and is the exact callback URL registered on
+      // the GitHub OAuth App).
+      navigate("/github-roast");
+      return;
+    }
     if (id === "steam") {
       // Steam has a real backend integration too — its own route owns the
       // profile-connection form and the live Steam Web API data fetch.
@@ -52,6 +59,11 @@ export function DashboardPage() {
       navigate("/steam-roast");
       return;
     }
+    if (id === "github") {
+      navigate("/github-roast");
+      return;
+    }
+    
 
     const platform = platforms.find((p) => p.id === id);
     if (!platform) return;

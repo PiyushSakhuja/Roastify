@@ -13,10 +13,15 @@
   <body>
     <div id="root"></div>
     <!-- Point this at your deployed Roastify backend (see ../backend).
-         Used by the /spotify-roast route for the real OAuth token exchange
-         and roast generation. Defaults to http://localhost:8888 locally. -->
+         Used by the /spotify-roast and /github-roast routes for real OAuth
+         token exchange and roast generation. Defaults to
+         http://localhost:8888 locally. -->
     <script>
       window.ROASTIFY_BACKEND_URL = 'http://localhost:8888';
+      // Your GitHub OAuth App's Client ID (public, safe to expose here —
+      // see https://github.com/settings/developers). The matching Client
+      // Secret lives only in backend/.env, never here.
+      window.GITHUB_CLIENT_ID = 'Ov23lizURpGtc2yrhbgh';
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
