@@ -16,19 +16,25 @@ module.exports = {
     isConfigured: () => Boolean(process.env.MISTRAL_API_KEY),
 
     async generateRoast(spotifyData) {
+        const userQuery = buildUserPrompt(spotifyData);
+        return this.generateCompletion(SYSTEM_PROMPT, userQuery);
+    },
+
+    // Generic chat completion, usable by any roast type (Spotify, Steam, ...)
+    // that has already built its own system/user prompt strings.
+    async generateCompletion(systemPrompt, userPrompt) {
         const apiKey = process.env.MISTRAL_API_KEY;
         if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
 
         const model = process.env.MISTRAL_MODEL || DEFAULT_MODEL;
-        const userQuery = buildUserPrompt(spotifyData);
 
         const response = await axios.post(
             API_URL,
             {
                 model,
                 messages: [
-                    { role: 'system', content: SYSTEM_PROMPT },
-                    { role: 'user', content: userQuery },
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
                 ],
                 temperature: 0.8,
                 max_tokens: 300,

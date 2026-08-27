@@ -57,7 +57,7 @@ export const platforms: Platform[] = [
   {
     id: "steam",
     name: "Steam",
-    tagline: "Gaming Habits",
+    tagline: "Roast my gaming habits",
     description: "847 hours logged. 12 games finished. Bold strategy.",
     category: "gaming",
     accent: "steam",

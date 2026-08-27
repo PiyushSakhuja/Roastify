@@ -7,6 +7,8 @@ const axios = require('axios');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const aiProviders = require('./providers');
+const steamPrompt = require('./providers/steamPrompt');
+const steamService = require('./services/steam');
 
 const app = express();
 const PORT = process.env.PORT || 8888;
@@ -18,6 +20,12 @@ const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 if (!CLIENT_ID || !CLIENT_SECRET) {
     console.error('FATAL: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set (see .env.example).');
     process.exit(1);
+}
+
+// Steam is an optional integration — warn instead of exiting so the rest of
+// Roastify (Spotify, and any other platform) keeps working without it.
+if (!steamService.isConfigured()) {
+    console.warn('WARNING: STEAM_API_KEY is not set. Steam Roast endpoints will return an error until configured.');
 }
 
 // At least one AI provider must be configured, but which one is flexible.
@@ -138,6 +146,132 @@ app.post('/api/generate-roast', async (req, res) => {
             error: 'Failed to generate roast.',
             details: error.message,
         });
+    }
+});
+
+// --- Steam Roast endpoints ---
+// All Steam Web API calls happen server-side; STEAM_API_KEY never reaches
+// the client. Reuses the same apiLimiter as every other /api/* route.
+
+function requireSteamProfileInput(req, res) {
+    const { profile } = req.body || {};
+    if (!profile || typeof profile !== 'string') {
+        res.status(400).json({ error: 'Missing or invalid "profile". Provide a Steam profile URL, vanity name, or SteamID64.' });
+        return null;
+    }
+    return profile;
+}
+
+function handleSteamError(res, error) {
+    if (error.code === 'PROFILE_PRIVATE' || error.code === 'GAME_DETAILS_PRIVATE') {
+        return res.status(403).json({ error: error.message, code: error.code });
+    }
+    console.error('Steam API error:', error.message);
+    return res.status(502).json({ error: 'Failed to fetch Steam data.', details: error.message });
+}
+
+// GET-style lookup via query param, matching the "profile" -> "games" ->
+// "roast" pipeline described for the feature; profile + games are combined
+// into one normalized fetch since GetOwnedGames requires the same
+// visibility check as GetPlayerSummaries anyway.
+app.get('/api/steam/profile', async (req, res) => {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    if (!profile) {
+        return res.status(400).json({ error: 'Missing "profile" query parameter.' });
+    }
+    if (!steamService.isConfigured()) {
+        return res.status(503).json({ error: 'Steam integration is not configured on this server.' });
+    }
+
+    try {
+        const steamId = await steamService.resolveToSteamId(profile);
+        const player = await steamService.getPlayerSummary(steamId);
+        if (!steamService.isProfilePubliclyVisible(player)) {
+            return res.status(403).json({
+                error: "Your Steam game details are private, so Roastify can't access enough data to roast you properly.",
+                code: 'PROFILE_PRIVATE',
+            });
+        }
+        res.json({
+            steamId,
+            username: player.personaname,
+            avatar: player.avatarfull || player.avatarmedium || player.avatar,
+            profileUrl: player.profileurl,
+        });
+    } catch (error) {
+        handleSteamError(res, error);
+    }
+});
+
+app.get('/api/steam/games', async (req, res) => {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    if (!profile) {
+        return res.status(400).json({ error: 'Missing "profile" query parameter.' });
+    }
+    if (!steamService.isConfigured()) {
+        return res.status(503).json({ error: 'Steam integration is not configured on this server.' });
+    }
+
+    try {
+        const steamId = await steamService.resolveToSteamId(profile);
+        const data = await steamService.fetchNormalizedSteamData(steamId);
+        res.json(data);
+    } catch (error) {
+        handleSteamError(res, error);
+    }
+});
+
+// Accepts either a raw "profile" (fetches fresh) or an already-normalized
+// "steamData" (reuses cached data — powers "Roast Me Again" without
+// re-hitting the Steam API for the whole library every time).
+app.post('/api/steam/roast', async (req, res) => {
+    const { profile, steamData, provider } = req.body || {};
+
+    if (provider !== undefined && typeof provider !== 'string') {
+        return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+
+    if (!steamService.isConfigured()) {
+        return res.status(503).json({ error: 'Steam integration is not configured on this server.' });
+    }
+
+    try {
+        let data = steamData;
+        if (!data) {
+            const profileInput = requireSteamProfileInput(req, res);
+            if (!profileInput) return;
+            const steamId = await steamService.resolveToSteamId(profileInput);
+            data = await steamService.fetchNormalizedSteamData(steamId);
+        }
+
+        const isValidGameList = (v) =>
+            Array.isArray(v) && v.every((g) => g && typeof g.name === 'string' && typeof g.playtimeHours === 'number');
+        if (
+            typeof data?.username !== 'string' ||
+            typeof data?.totalGames !== 'number' ||
+            typeof data?.totalPlaytimeHours !== 'number' ||
+            !isValidGameList(data?.topGames) ||
+            !isValidGameList(data?.recentlyPlayed || [])
+        ) {
+            return res.status(400).json({ error: 'Invalid or incomplete Steam data provided.' });
+        }
+
+        const systemPrompt = steamPrompt.SYSTEM_PROMPT;
+        const userPrompt = steamPrompt.buildUserPrompt(data);
+
+        const { roastText, provider: usedProvider } = await aiProviders.generateRoastFromPrompt(
+            systemPrompt,
+            userPrompt,
+            provider || null
+        );
+
+        res.json({ roastText, provider: usedProvider, steamData: data });
+    } catch (error) {
+        if (error.code === 'PROFILE_PRIVATE' || error.code === 'GAME_DETAILS_PRIVATE') {
+            return handleSteamError(res, error);
+        }
+        console.error('Error generating Steam roast:', error.message);
+        res.status(502).json({ error: 'Failed to generate roast.', details: error.message });
     }
 });
 

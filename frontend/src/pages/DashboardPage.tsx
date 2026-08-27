@@ -27,6 +27,12 @@ export function DashboardPage() {
       navigate("/spotify-roast");
       return;
     }
+    if (id === "steam") {
+      // Steam has a real backend integration too — its own route owns the
+      // profile-connection form and the live Steam Web API data fetch.
+      navigate("/steam-roast");
+      return;
+    }
     // Other platforms don't have a live backend integration yet; connecting
     // here just flips the mock state so the rest of the dashboard (combined
     // roast, filters) can be exercised with realistic data in the meantime.
@@ -40,6 +46,10 @@ export function DashboardPage() {
   function handleRoast(id: string) {
     if (id === "spotify") {
       navigate("/spotify-roast");
+      return;
+    }
+    if (id === "steam") {
+      navigate("/steam-roast");
       return;
     }
 
