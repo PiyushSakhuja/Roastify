@@ -10,6 +10,8 @@ const aiProviders = require('./providers');
 const steamPrompt = require('./providers/steamPrompt');
 const steamService = require('./services/steam');
 const github = require('./services/github');
+const movies = require('./services/movies');
+const valorant = require('./services/valorant');
 const app = express();
 const PORT = process.env.PORT || 8888;
 
@@ -32,6 +34,19 @@ const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const githubConfigured = Boolean(GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET);
 if (!githubConfigured) {
     console.warn('GitHub roasting disabled: set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable it (see .env.example).');
+}
+// Movies is an optional integration too — warn instead of exiting.
+if (!movies.isConfigured()) {
+    console.warn('WARNING: TRAKT_CLIENT_ID is not set. Movie Roast endpoints will return an error until configured.');
+}
+// VALORANT: never silently falls back to mock — if VALORANT_PROVIDER=riot
+// (the default) and Riot credentials are missing, the integration reports
+// itself as "being configured" rather than serving fake data.
+const valorantProviderInfo = valorant.getActiveProviderInfo();
+if (valorantProviderInfo.provider === 'mock') {
+    console.warn('VALORANT Roast is running in MOCK mode (VALORANT_PROVIDER=mock). This is for development/UI testing only — never real player data.');
+} else if (!valorantProviderInfo.configured) {
+    console.warn('VALORANT Roast disabled: set RIOT_RSO_CLIENT_ID, RIOT_RSO_CLIENT_SECRET, RIOT_API_KEY, and RIOT_RSO_REDIRECT_URI to enable it (see .env.example).');
 }
 // At least one AI provider must be configured, but which one is flexible.
 const configuredProviders = aiProviders.getConfiguredProviders();
@@ -462,6 +477,352 @@ function handleGitHubApiError(res, error, fallbackMessage) {
         details: error.response?.data?.message || error.message,
     });
 }
+
+// --- Movie Roast endpoints ---
+// All Trakt API calls happen server-side; TRAKT_CLIENT_ID never reaches the
+// client. Mirrors the Steam integration: no OAuth, just a public profile
+// identifier, with the same apiLimiter as every other /api/* route.
+
+// In-memory cache of already-fetched+normalized movie data, keyed by
+// username, so "Roast Me Again" doesn't re-hit Trakt's API for the whole
+// watch history every time. Entries expire after 30 minutes.
+const movieDataCache = new Map();
+const MOVIE_CACHE_TTL_MS = 30 * 60 * 1000;
+
+function cacheMovieData(key, data) {
+    movieDataCache.set(key, { data, expiresAt: Date.now() + MOVIE_CACHE_TTL_MS });
+}
+
+function getCachedMovieData(key) {
+    const entry = movieDataCache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+        movieDataCache.delete(key);
+        return null;
+    }
+    return entry.data;
+}
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of movieDataCache.entries()) {
+        if (now > entry.expiresAt) movieDataCache.delete(key);
+    }
+}, 10 * 60 * 1000).unref();
+
+function requireMoviesConfigured(req, res, next) {
+    if (!movies.isConfigured()) {
+        return res.status(503).json({
+            error: 'Movie Roast is not configured on this server.',
+            details: 'Set TRAKT_CLIENT_ID to enable it.',
+        });
+    }
+    next();
+}
+
+function handleMovieError(res, error) {
+    if (error.code === 'PROFILE_PRIVATE') {
+        return res.status(403).json({ error: error.message, code: error.code });
+    }
+    if (error.code === 'PROFILE_NOT_FOUND') {
+        return res.status(404).json({ error: error.message, code: error.code });
+    }
+    if (error.code === 'EMPTY_HISTORY') {
+        return res.status(422).json({ error: error.message, code: error.code });
+    }
+    if (error.code === 'RATE_LIMITED') {
+        return res.status(429).json({ error: error.message, code: error.code });
+    }
+    console.error('Movie data error:', error.message);
+    return res.status(502).json({ error: 'Failed to fetch movie data.', details: error.message });
+}
+
+// GET-style lookup, matching the "profile" -> "history" -> "roast" pipeline.
+// Fetches + normalizes in one call (watched history and ratings both need
+// the same profile resolution anyway).
+app.get('/api/movies/profile', requireMoviesConfigured, async (req, res) => {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    if (!profile) {
+        return res.status(400).json({ error: 'Missing "profile" query parameter.' });
+    }
+
+    try {
+        const cacheKey = movies.parseProfileInput(profile) || profile;
+        let data = getCachedMovieData(cacheKey);
+        if (!data) {
+            data = await movies.fetchNormalizedMovieData(profile);
+            cacheMovieData(cacheKey, data);
+        }
+        res.json(data);
+    } catch (error) {
+        handleMovieError(res, error);
+    }
+});
+
+app.get('/api/movies/history', requireMoviesConfigured, async (req, res) => {
+    const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
+    if (!profile) {
+        return res.status(400).json({ error: 'Missing "profile" query parameter.' });
+    }
+
+    try {
+        const cacheKey = movies.parseProfileInput(profile) || profile;
+        let data = getCachedMovieData(cacheKey);
+        if (!data) {
+            data = await movies.fetchNormalizedMovieData(profile);
+            cacheMovieData(cacheKey, data);
+        }
+        res.json({ movies: data.movies });
+    } catch (error) {
+        handleMovieError(res, error);
+    }
+});
+
+// Accepts either a raw "profile" (fetches fresh, using the cache above) or
+// an already-normalized "movieData" (reuses supplied data — powers "Roast
+// Me Again" without re-hitting Trakt at all).
+app.post('/api/movies/roast', requireMoviesConfigured, async (req, res) => {
+    const { profile, movieData, provider } = req.body || {};
+
+    if (provider !== undefined && typeof provider !== 'string') {
+        return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+
+    try {
+        let data = movieData;
+        if (!data) {
+            if (!profile || typeof profile !== 'string') {
+                return res.status(400).json({ error: 'Missing "profile" (or "movieData") in request body.' });
+            }
+            const cacheKey = movies.parseProfileInput(profile) || profile;
+            data = getCachedMovieData(cacheKey);
+            if (!data) {
+                data = await movies.fetchNormalizedMovieData(profile);
+                cacheMovieData(cacheKey, data);
+            }
+        }
+
+        const isValidMovieList = (v) =>
+            Array.isArray(v) && v.every((m) => m && typeof m.title === 'string' && Array.isArray(m.genres));
+        if (
+            typeof data?.totalMovies !== 'number' ||
+            !isValidMovieList(data?.movies) ||
+            !Array.isArray(data?.topGenres)
+        ) {
+            return res.status(400).json({ error: 'Invalid or incomplete movie data provided.' });
+        }
+
+        const { roastText, provider: usedProvider } = await aiProviders.generateRoast(
+            data,
+            provider || null,
+            'movies'
+        );
+
+        res.json({ roastText, provider: usedProvider, movieData: data });
+    } catch (error) {
+        handleMovieError(res, error);
+    }
+});
+
+// --- VALORANT Roast endpoints ---
+// Riot Sign On (RSO) authorization-code flow, entirely server-owned: the
+// frontend only ever hits GET /api/valorant/auth to kick things off and
+// gets redirected straight back to /valorant-roast when it's done. The
+// CSRF `state` value and the resulting Riot access token both live only
+// on the backend, keyed by an opaque sessionId — same session-cache shape
+// as the GitHub integration.
+
+const valorantStateStore = new Map(); // state -> { expiresAt }
+const VALORANT_STATE_TTL_MS = 10 * 60 * 1000;
+
+const valorantSessionCache = new Map(); // sessionId -> { accessToken, normalized?, expiresAt }
+const VALORANT_SESSION_TTL_MS = 30 * 60 * 1000;
+
+setInterval(() => {
+    const now = Date.now();
+    for (const [state, entry] of valorantStateStore.entries()) {
+        if (now > entry.expiresAt) valorantStateStore.delete(state);
+    }
+    for (const [id, entry] of valorantSessionCache.entries()) {
+        if (now > entry.expiresAt) valorantSessionCache.delete(id);
+    }
+}, 5 * 60 * 1000).unref();
+
+function requireValorantConfigured(req, res, next) {
+    const info = valorant.getActiveProviderInfo();
+    if (!info.configured) {
+        return res.status(503).json({
+            error: 'VALORANT integration is currently being configured.',
+            code: 'NOT_CONFIGURED',
+        });
+    }
+    next();
+}
+
+function handleValorantError(res, error) {
+    if (error.code === 'EMPTY_HISTORY') {
+        return res.status(422).json({ error: error.message, code: error.code });
+    }
+    if (error.name === 'ValorantAuthError' || error.name === 'ValorantApiError') {
+        const statusByCode = {
+            TOKEN_EXCHANGE_FAILED: 401,
+            FORBIDDEN: 403,
+            NOT_FOUND: 404,
+            RATE_LIMITED: 429,
+            REGION_ERROR: 400,
+            API_ERROR: 502,
+        };
+        return res.status(statusByCode[error.code] || 502).json({ error: error.message, code: error.code });
+    }
+    console.error('VALORANT error:', error.message);
+    return res.status(502).json({ error: 'Failed to complete the VALORANT request.', details: error.message });
+}
+
+// Step 1: browser hits this directly (e.g. window.location = ...), we
+// generate + store a CSRF state, then 302 to Riot's authorize screen.
+app.get('/api/valorant/auth', requireValorantConfigured, (req, res) => {
+    const info = valorant.getActiveProviderInfo();
+    if (info.provider === 'mock') {
+        // Mock mode has no real OAuth hop — go straight back with a mock session.
+        const sessionId = `val_mock_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        valorantSessionCache.set(sessionId, { isMock: true, expiresAt: Date.now() + VALORANT_SESSION_TTL_MS });
+        const redirect = new URL(process.env.FRONTEND_URL || 'http://localhost:5173');
+        redirect.pathname = '/valorant-roast';
+        redirect.searchParams.set('session', sessionId);
+        return res.redirect(redirect.toString());
+    }
+
+    const state = valorant.generateState();
+    valorantStateStore.set(state, { expiresAt: Date.now() + VALORANT_STATE_TTL_MS });
+    res.redirect(valorant.buildAuthorizeUrl(state));
+});
+
+// Step 2: Riot redirects the browser here after the player authorizes (or denies).
+app.get('/api/valorant/callback', requireValorantConfigured, async (req, res) => {
+    const { code, state, error, error_description: errorDescription } = req.query;
+    const frontendBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+    function redirectWithError(message, errCode) {
+        const url = new URL('/valorant-roast', frontendBase);
+        url.searchParams.set('error', errCode || 'AUTH_ERROR');
+        url.searchParams.set('error_description', message);
+        return res.redirect(url.toString());
+    }
+
+    if (error) {
+        return redirectWithError(
+            typeof errorDescription === 'string' ? errorDescription : 'You denied access, or Riot returned an error.',
+            'USER_DENIED'
+        );
+    }
+
+    if (!state || typeof state !== 'string' || !valorantStateStore.has(state)) {
+        return redirectWithError('Authentication failed due to a state mismatch. Please try connecting again.', 'INVALID_STATE');
+    }
+    valorantStateStore.delete(state); // one-time use
+
+    if (!code || typeof code !== 'string') {
+        return redirectWithError('Riot did not return an authorization code.', 'MISSING_CODE');
+    }
+
+    try {
+        const accessToken = await valorant.exchangeCodeForToken(code);
+        const sessionId = `val_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        valorantSessionCache.set(sessionId, { accessToken, expiresAt: Date.now() + VALORANT_SESSION_TTL_MS });
+
+        const url = new URL('/valorant-roast', frontendBase);
+        url.searchParams.set('session', sessionId);
+        res.redirect(url.toString());
+    } catch (err) {
+        redirectWithError(err.message || 'Failed to complete Riot authentication.', err.code || 'TOKEN_EXCHANGE_FAILED');
+    }
+});
+
+function getValorantSession(sessionId) {
+    const entry = valorantSessionCache.get(sessionId);
+    if (!entry || Date.now() > entry.expiresAt) return null;
+    return entry;
+}
+
+// Fetches (and caches) the normalized profile for an existing session.
+async function resolveValorantProfile(sessionId) {
+    const session = getValorantSession(sessionId);
+    if (!session) {
+        const err = new Error('VALORANT session expired or invalid. Please reconnect.');
+        err.code = 'SESSION_EXPIRED';
+        throw err;
+    }
+
+    if (session.normalized) return session.normalized;
+
+    const normalized = session.isMock
+        ? valorant.getMockPlayerData()
+        : await valorant.getPlayerDataFromRiot(session.accessToken);
+
+    session.normalized = normalized;
+    valorantSessionCache.set(sessionId, session);
+    return normalized;
+}
+
+app.get('/api/valorant/profile', requireValorantConfigured, async (req, res) => {
+    const sessionId = req.query.sessionId;
+    if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'Missing sessionId query parameter.' });
+    }
+    try {
+        const profile = await resolveValorantProfile(sessionId);
+        res.json(profile);
+    } catch (error) {
+        if (error.code === 'SESSION_EXPIRED') {
+            return res.status(401).json({ error: error.message, code: error.code });
+        }
+        handleValorantError(res, error);
+    }
+});
+
+app.get('/api/valorant/matches', requireValorantConfigured, async (req, res) => {
+    const sessionId = req.query.sessionId;
+    if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'Missing sessionId query parameter.' });
+    }
+    try {
+        const profile = await resolveValorantProfile(sessionId);
+        res.json({ recentMatches: profile.recentMatches });
+    } catch (error) {
+        if (error.code === 'SESSION_EXPIRED') {
+            return res.status(401).json({ error: error.message, code: error.code });
+        }
+        handleValorantError(res, error);
+    }
+});
+
+app.post('/api/valorant/roast', requireValorantConfigured, async (req, res) => {
+    const { sessionId, provider } = req.body || {};
+
+    if (!sessionId || typeof sessionId !== 'string') {
+        return res.status(400).json({ error: 'Missing sessionId in request body.' });
+    }
+    if (provider !== undefined && typeof provider !== 'string') {
+        return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+
+    try {
+        const profile = await resolveValorantProfile(sessionId);
+
+        const { roastText, provider: usedProvider } = await aiProviders.generateRoast(
+            profile,
+            provider || null,
+            'valorant'
+        );
+
+        res.json({ roastText, provider: usedProvider, profile });
+    } catch (error) {
+        if (error.code === 'SESSION_EXPIRED') {
+            return res.status(401).json({ error: error.message, code: error.code });
+        }
+        handleValorantError(res, error);
+    }
+});
 
 // --- Health check (useful for deployment platforms) ---
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

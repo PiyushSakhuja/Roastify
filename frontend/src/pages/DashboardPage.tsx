@@ -40,6 +40,18 @@ export function DashboardPage() {
       navigate("/steam-roast");
       return;
     }
+    if (id === "movies") {
+      // Movies has a real backend integration too — its own route owns the
+      // Trakt profile-connection form and the live Trakt API data fetch.
+      navigate("/movie-roast");
+      return;
+    }
+    if (id === "valorant") {
+      // VALORANT has a real backend integration too — its own route owns
+      // the Riot Sign On flow and the live Riot API data fetch.
+      navigate("/valorant-roast");
+      return;
+    }
     // Other platforms don't have a live backend integration yet; connecting
     // here just flips the mock state so the rest of the dashboard (combined
     // roast, filters) can be exercised with realistic data in the meantime.
@@ -63,7 +75,14 @@ export function DashboardPage() {
       navigate("/github-roast");
       return;
     }
-    
+    if (id === "movies") {
+      navigate("/movie-roast");
+      return;
+    }
+    if (id === "valorant") {
+      navigate("/valorant-roast");
+      return;
+    }
 
     const platform = platforms.find((p) => p.id === id);
     if (!platform) return;
