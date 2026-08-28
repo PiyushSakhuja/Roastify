@@ -53,7 +53,15 @@ export function MovieRoastResult({ roastText, provider, data }: MovieRoastResult
 }
 
 function buildEvidence(data: MovieRoastData): string[] {
-  const items: string[] = [`${data.totalMovies} movies watched`];
+  const source = data.source ?? "trakt";
+
+  if (source === "top4") {
+    return buildTop4Evidence(data);
+  }
+
+  const items: string[] = [
+    source === "letterboxd" ? `${data.totalMovies} movies analyzed` : `${data.totalMovies} movies watched`,
+  ];
 
   if (data.topGenres[0] && data.evidence?.topGenrePercent !== undefined) {
     items.push(`${data.evidence.topGenrePercent}% ${data.topGenres[0]}`);
@@ -73,6 +81,27 @@ function buildEvidence(data: MovieRoastData): string[] {
 
   if (data.evidence?.highRatingPercent !== undefined && data.evidence.highRatingPercent > 0) {
     items.push(`${data.evidence.highRatingPercent}% rated 8/10 or higher`);
+  }
+
+  return items;
+}
+
+/** Top4 evidence is derived purely from the four titles themselves — no invented statistics, no pretending four movies is a full history. */
+function buildTop4Evidence(data: MovieRoastData): string[] {
+  const items: string[] = [`${data.movies.length} movies analyzed`];
+
+  const years = data.movies.map((m) => m.year).filter((y): y is number => typeof y === "number");
+  if (years.length >= 2) {
+    const span = Math.max(...years) - Math.min(...years);
+    items.push(`Your picks span ${span} year${span === 1 ? "" : "s"}`);
+  }
+
+  if (data.evidence?.sharedDirector) {
+    items.push(`${data.evidence.sharedDirector.count} of your picks share a director: ${data.evidence.sharedDirector.name}`);
+  }
+
+  if (data.topGenres.length > 0) {
+    items.push(`Shared genre thread: ${data.topGenres.slice(0, 2).join(", ")}`);
   }
 
   return items;

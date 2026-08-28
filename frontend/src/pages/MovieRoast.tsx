@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useMovieRoast } from "../hooks/useMovieRoast";
-import { fetchAvailableProviders } from "../integrations/movies";
+import { fetchAvailableProviders, type MovieRoastData } from "../integrations/movies";
+import { MovieSourceSelector, type MovieSourceChoice } from "../components/movies/MovieSourceSelector";
+import { LetterboxdUploader } from "../components/movies/LetterboxdUploader";
+import { Top4Selector } from "../components/movies/Top4Selector";
 import { MovieProfile } from "../components/movies/MovieProfile";
 import { MovieTaste } from "../components/movies/MovieTaste";
 import { MovieRoastResult } from "../components/movies/MovieRoastResult";
@@ -22,8 +25,18 @@ const LOADING_MESSAGES = [
   "Preparing the verdict...",
 ];
 
+const SHARE_SOURCE_LABEL: Record<string, string> = {
+  trakt: "Roasted from my Trakt history",
+  letterboxd: "Roasted from my Letterboxd history",
+  top4: "Roasted from my Top 4",
+};
+
+/** Screens shown before movie.status takes over (idle -> source-specific input -> hand off to the hook). */
+type PreRoastScreen = "source-select" | "trakt-connect" | "letterboxd-upload" | "top4-input";
+
 export function MovieRoastPage() {
   const movie = useMovieRoast();
+  const [screen, setScreen] = useState<PreRoastScreen>("source-select");
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
@@ -50,7 +63,12 @@ export function MovieRoastPage() {
 
   const shareText = useMemo(() => {
     if (!movie.roastText || !movie.movieData) return "";
-    return `Roastify just roasted my movie taste:\n\n"${movie.roastText}"\n\n${movie.movieData.totalMovies} movies watched.`;
+    const source = movie.movieData.source ?? "trakt";
+    const countLine =
+      source === "top4"
+        ? `${movie.movieData.movies.length} movies analyzed.`
+        : `${movie.movieData.totalMovies} movies watched.`;
+    return `${SHARE_SOURCE_LABEL[source]}:\n\n"${movie.roastText}"\n\n${countLine}`;
   }, [movie.roastText, movie.movieData]);
 
   function handleShare() {
@@ -60,6 +78,28 @@ export function MovieRoastPage() {
       navigator.clipboard?.writeText(shareText);
     }
   }
+
+  function handleSelectSource(source: MovieSourceChoice) {
+    if (source === "trakt") setScreen("trakt-connect");
+    else if (source === "letterboxd") setScreen("letterboxd-upload");
+    else setScreen("top4-input");
+  }
+
+  function handleBackToSourceSelect() {
+    setScreen("source-select");
+    movie.reset();
+  }
+
+  function handleNormalizedData(data: MovieRoastData) {
+    movie.connectWithData(data, selectedProvider || undefined);
+  }
+
+  function handleReset() {
+    setScreen("source-select");
+    movie.reset();
+  }
+
+  const activeSource = movie.movieData?.source ?? (screen === "trakt-connect" ? "trakt" : undefined);
 
   return (
     <div className="min-h-screen bg-ink">
@@ -89,7 +129,9 @@ export function MovieRoastPage() {
                   {(movie.movieData.username || "??").slice(0, 2).toUpperCase()}
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-paper">{movie.movieData.username}</p>
+                  <p className="text-sm font-semibold text-paper">
+                    {movie.movieData.username || (activeSource === "top4" ? "Top 4" : "Imported")}
+                  </p>
                   <span className="inline-flex items-center gap-1 font-mono text-[0.6rem] uppercase tracking-wider text-acid">
                     <span className="h-1.5 w-1.5 rounded-full bg-acid" />
                     Connected
@@ -102,40 +144,64 @@ export function MovieRoastPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-5 py-10 sm:px-8">
-        {/* Idle: connection form */}
-        {movie.status === "idle" && (
-          <div className="mx-auto max-w-md rounded-2xl border border-line bg-charcoal/80 p-6 sm:p-8">
-            <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-[var(--color-movies)]/10">
-              <svg viewBox="0 0 24 24" className="h-6 w-6 text-[var(--color-movies)]" fill="none">
-                <rect x="4" y="5" width="16" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M4 9h16" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M8 5v4M13 5v4" stroke="currentColor" strokeWidth="1.4" />
-              </svg>
-            </div>
-            {providers.length > 0 && (
-              <div className="mb-5">
-                <label htmlFor="provider-select" className="mb-1.5 block font-mono text-[0.65rem] uppercase tracking-wider text-smoke">
-                  AI Agent
-                </label>
-                <select
-                  id="provider-select"
-                  value={selectedProvider}
-                  onChange={(e) => setSelectedProvider(e.target.value)}
-                  className="w-full rounded-xl border border-line bg-ink/50 px-3 py-2.5 text-sm text-paper focus:outline-none focus:border-[var(--color-movies)]"
-                >
-                  <option value="">Auto (first available)</option>
-                  {providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+        {/* Source selection — the entry screen */}
+        {movie.status === "idle" && screen === "source-select" && (
+          <MovieSourceSelector onSelect={handleSelectSource} />
+        )}
+
+        {/* Trakt: existing connection form, unchanged behavior */}
+        {movie.status === "idle" && screen === "trakt-connect" && (
+          <div className="mx-auto max-w-md">
+            <button
+              type="button"
+              onClick={handleBackToSourceSelect}
+              className="mb-5 inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-smoke transition hover:text-paper"
+            >
+              &larr; Choose a different source
+            </button>
+            <div className="rounded-2xl border border-line bg-charcoal/80 p-6 sm:p-8">
+              <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-[var(--color-movies)]/10">
+                <svg viewBox="0 0 24 24" className="h-6 w-6 text-[var(--color-movies)]" fill="none">
+                  <rect x="4" y="5" width="16" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+                  <path d="M4 9h16" stroke="currentColor" strokeWidth="1.4" />
+                  <path d="M8 5v4M13 5v4" stroke="currentColor" strokeWidth="1.4" />
+                </svg>
               </div>
-            )}
-            <MovieStats
-              onSubmit={(profile) => movie.connect(profile, selectedProvider || undefined)}
-            />
+              {providers.length > 0 && (
+                <div className="mb-5">
+                  <label htmlFor="provider-select" className="mb-1.5 block font-mono text-[0.65rem] uppercase tracking-wider text-smoke">
+                    AI Agent
+                  </label>
+                  <select
+                    id="provider-select"
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
+                    className="w-full rounded-xl border border-line bg-ink/50 px-3 py-2.5 text-sm text-paper focus:outline-none focus:border-[var(--color-movies)]"
+                  >
+                    <option value="">Auto (first available)</option>
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <MovieStats
+                onSubmit={(profile) => movie.connect(profile, selectedProvider || undefined)}
+              />
+            </div>
           </div>
+        )}
+
+        {/* Letterboxd: CSV drag-and-drop, parsed client-side */}
+        {movie.status === "idle" && screen === "letterboxd-upload" && (
+          <LetterboxdUploader onParsed={handleNormalizedData} onBack={handleBackToSourceSelect} />
+        )}
+
+        {/* Top 4: four plain title inputs, no account/API required */}
+        {movie.status === "idle" && screen === "top4-input" && (
+          <Top4Selector onSubmit={handleNormalizedData} onBack={handleBackToSourceSelect} />
         )}
 
         {/* Loading */}
@@ -146,7 +212,7 @@ export function MovieRoastPage() {
           </div>
         )}
 
-        {/* Private profile */}
+        {/* Private profile (Trakt) */}
         {movie.status === "private" && (
           <div className="mx-auto max-w-md rounded-2xl border border-verdict/40 bg-verdict/5 p-6 sm:p-8">
             <p className="mb-2 font-mono text-[0.65rem] uppercase tracking-wider text-verdict">
@@ -163,7 +229,7 @@ export function MovieRoastPage() {
             </div>
             <button
               type="button"
-              onClick={movie.reset}
+              onClick={() => setScreen("trakt-connect")}
               className="w-full rounded-full border border-line px-6 py-3 text-sm font-medium text-paper transition hover:border-smoke-dim"
             >
               Try another profile
@@ -171,7 +237,7 @@ export function MovieRoastPage() {
           </div>
         )}
 
-        {/* Profile not found */}
+        {/* Profile not found (Trakt) */}
         {movie.status === "not-found" && (
           <div className="mx-auto max-w-md rounded-2xl border border-verdict/40 bg-verdict/5 p-6 sm:p-8">
             <p className="mb-2 font-mono text-[0.65rem] uppercase tracking-wider text-verdict">
@@ -180,7 +246,7 @@ export function MovieRoastPage() {
             <p className="mb-4 text-paper">{movie.errorMessage}</p>
             <button
               type="button"
-              onClick={movie.reset}
+              onClick={() => setScreen("trakt-connect")}
               className="w-full rounded-full border border-line px-6 py-3 text-sm font-medium text-paper transition hover:border-smoke-dim"
             >
               Try another profile
@@ -188,7 +254,7 @@ export function MovieRoastPage() {
           </div>
         )}
 
-        {/* Empty watch history */}
+        {/* Empty watch history (Trakt) */}
         {movie.status === "empty" && (
           <div className="mx-auto max-w-md rounded-2xl border border-line bg-charcoal/80 p-6 sm:p-8">
             <p className="mb-2 font-mono text-[0.65rem] uppercase tracking-wider text-smoke">
@@ -197,7 +263,7 @@ export function MovieRoastPage() {
             <p className="mb-4 text-paper">{movie.errorMessage}</p>
             <button
               type="button"
-              onClick={movie.reset}
+              onClick={() => setScreen("trakt-connect")}
               className="w-full rounded-full border border-line px-6 py-3 text-sm font-medium text-paper transition hover:border-smoke-dim"
             >
               Try another profile
@@ -216,7 +282,7 @@ export function MovieRoastPage() {
             </p>
             <button
               type="button"
-              onClick={movie.reset}
+              onClick={handleBackToSourceSelect}
               className="w-full rounded-full border border-line px-6 py-3 text-sm font-medium text-paper transition hover:border-smoke-dim"
             >
               Try again
@@ -224,7 +290,7 @@ export function MovieRoastPage() {
           </div>
         )}
 
-        {/* Done — full results */}
+        {/* Done — full results, adapted per source by the components themselves */}
         {movie.status === "done" && movie.movieData && movie.roastText && (
           <div className="space-y-5">
             <MovieProfile data={movie.movieData} />
@@ -252,7 +318,7 @@ export function MovieRoastPage() {
               >
                 Share Roast
               </button>
-              {movie.movieData.username && (
+              {movie.movieData.source !== "top4" && movie.movieData.username && (
                 <a
                   href={`https://trakt.tv/users/${encodeURIComponent(movie.movieData.username)}`}
                   target="_blank"
@@ -262,6 +328,13 @@ export function MovieRoastPage() {
                   View Profile
                 </a>
               )}
+              <button
+                type="button"
+                onClick={handleReset}
+                className="flex-1 rounded-full border border-line px-5 py-3 text-center text-sm font-medium text-smoke transition hover:text-paper"
+              >
+                Try a different source
+              </button>
               <Link
                 to="/"
                 className="flex-1 rounded-full border border-line px-5 py-3 text-center text-sm font-medium text-smoke transition hover:text-paper"

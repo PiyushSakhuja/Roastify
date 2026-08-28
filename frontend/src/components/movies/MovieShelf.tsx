@@ -49,7 +49,9 @@ export function MovieShelf({ data }: MovieShelfProps) {
     return list;
   }, [movies, query, sort, genreFilter]);
 
-  if (movies.length === 0) return null;
+  // Top4's four picks are already shown in "The Four" (MovieTaste) — a
+  // searchable/filterable shelf adds nothing for a 4-item list.
+  if (movies.length === 0 || data.source === "top4") return null;
 
   return (
     <div className="rounded-2xl border border-line bg-charcoal/80 p-5 sm:p-6">

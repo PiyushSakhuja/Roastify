@@ -4,9 +4,17 @@ interface MovieProfileProps {
   data: MovieRoastData;
 }
 
-/** Profile Overview — username, totals, average rating, favorite genre/decade. */
+const SOURCE_LABELS: Record<string, string> = {
+  trakt: "Source: Trakt",
+  letterboxd: "Source: Letterboxd Import",
+  top4: "Source: Top 4",
+};
+
+/** Profile Overview — username, totals, average rating, favorite genre/decade. Adapts per source so we never imply more data than was actually analyzed. */
 export function MovieProfile({ data }: MovieProfileProps) {
-  const initials = (data.username || "??").slice(0, 2).toUpperCase();
+  const source = data.source ?? "trakt";
+  const isTop4 = source === "top4";
+  const initials = (data.username || (source === "top4" ? "T4" : "??")).slice(0, 2).toUpperCase();
 
   return (
     <div className="rounded-2xl border border-line bg-charcoal/80 p-5 sm:p-6">
@@ -16,12 +24,12 @@ export function MovieProfile({ data }: MovieProfileProps) {
         </div>
         <div className="min-w-0">
           <p className="font-mono text-[0.65rem] uppercase tracking-wider text-[var(--color-movies)]">
-            Subject identified
+            {SOURCE_LABELS[source]}
           </p>
           <h2 className="truncate font-display text-2xl uppercase tracking-wide text-paper">
-            {data.username || "Unknown viewer"}
+            {data.username || (isTop4 ? "Your Top 4" : "Unknown viewer")}
           </h2>
-          {data.username && (
+          {source === "trakt" && data.username && (
             <a
               href={`https://trakt.tv/users/${encodeURIComponent(data.username)}`}
               target="_blank"
@@ -35,7 +43,10 @@ export function MovieProfile({ data }: MovieProfileProps) {
       </div>
 
       <dl className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat label="Movies watched" value={String(data.totalMovies)} />
+        <Stat
+          label={isTop4 ? "Analyzed" : "Movies watched"}
+          value={isTop4 ? `${data.totalMovies} movies` : String(data.totalMovies)}
+        />
         <Stat
           label="Average rating"
           value={typeof data.averageRating === "number" ? `${data.averageRating}/10` : "No ratings"}

@@ -10,12 +10,16 @@
 // produced it. A future provider (TMDB account import, IMDb export, etc.)
 // only needs to plug into the same shape server-side.
 
+export type MovieSource = "trakt" | "letterboxd" | "top4";
+
 export interface Movie {
   title: string;
   year?: number;
   rating?: number;
   genres: string[];
   directors?: string[];
+  actors?: string[];
+  watchedDate?: string;
   plays?: number;
   lastWatchedAt?: string;
   runtime?: number;
@@ -33,9 +37,15 @@ export interface MovieEvidence {
   highRatingPercent?: number;
   mostRewatched?: { title: string; plays: number };
   topRated?: Array<{ title: string; rating?: number }>;
+  /** Top4-specific: number of distinct years the four picks span, e.g. "spans only 7 years". */
+  yearSpan?: number;
+  /** Top4/Letterboxd: a director shared by 2+ of the analyzed movies, with the count. */
+  sharedDirector?: { name: string; count: number };
 }
 
 export interface MovieRoastData {
+  /** Which connection method produced this data. Defaults to "trakt" for older cached payloads. */
+  source?: MovieSource;
   username?: string;
   totalMovies: number;
   movies: Movie[];
@@ -129,7 +139,7 @@ export async function fetchMovieData(profileInput: string): Promise<MovieRoastDa
     throwForErrorBody(data, "Failed to fetch movie data.");
   }
 
-  return data as MovieRoastData;
+  return { ...(data as MovieRoastData), source: "trakt" };
 }
 
 /** Sends normalized movie data (or a raw profile as fallback) to the AI backend for a roast. */
@@ -163,6 +173,19 @@ export async function completeMovieRoastFlow(
   const movieData = await fetchMovieData(profileInput);
   const { roastText, provider: usedProvider } = await getRoastFromBackend(movieData, provider);
   return { movieData, roastText, provider: usedProvider };
+}
+
+/** Reports whether the Trakt integration is configured server-side, so the source-selection screen can show a note without waiting for a failed request. */
+export async function fetchMovieProviderConfig(): Promise<{ traktConfigured: boolean }> {
+  try {
+    const response = await fetch(`${getBackendUrl()}/api/movies/config`);
+    if (!response.ok) throw new Error(`status ${response.status}`);
+    return await response.json();
+  } catch {
+    // If the check itself fails, assume Trakt might still work — the
+    // actual connect attempt will surface a proper error if not.
+    return { traktConfigured: true };
+  }
 }
 
 /** Fetches which AI agents are configured on the backend (for a provider picker). Shared endpoint with Spotify/Steam. */

@@ -540,6 +540,13 @@ function handleMovieError(res, error) {
 // GET-style lookup, matching the "profile" -> "history" -> "roast" pipeline.
 // Fetches + normalizes in one call (watched history and ratings both need
 // the same profile resolution anyway).
+// Lets the frontend show "Trakt connection unavailable" up front on the
+// source-selection screen instead of only discovering it after a failed
+// request. Read-only, no secrets — just a boolean.
+app.get('/api/movies/config', (req, res) => {
+    res.json({ traktConfigured: movies.isConfigured() });
+});
+
 app.get('/api/movies/profile', requireMoviesConfigured, async (req, res) => {
     const profile = typeof req.query.profile === 'string' ? req.query.profile : null;
     if (!profile) {
@@ -578,10 +585,13 @@ app.get('/api/movies/history', requireMoviesConfigured, async (req, res) => {
     }
 });
 
-// Accepts either a raw "profile" (fetches fresh, using the cache above) or
-// an already-normalized "movieData" (reuses supplied data — powers "Roast
-// Me Again" without re-hitting Trakt at all).
-app.post('/api/movies/roast', requireMoviesConfigured, async (req, res) => {
+// Accepts either a raw "profile" (fetches fresh via Trakt, using the cache
+// above) or an already-normalized "movieData" (used by Letterboxd/Top4,
+// and to power "Roast Me Again" without re-fetching anything). Only the
+// "profile" path actually needs Trakt configured — Letterboxd/Top4 data is
+// already normalized client-side and never touches the Trakt service, so
+// this route intentionally does NOT sit behind requireMoviesConfigured.
+app.post('/api/movies/roast', async (req, res) => {
     const { profile, movieData, provider } = req.body || {};
 
     if (provider !== undefined && typeof provider !== 'string') {
@@ -593,6 +603,12 @@ app.post('/api/movies/roast', requireMoviesConfigured, async (req, res) => {
         if (!data) {
             if (!profile || typeof profile !== 'string') {
                 return res.status(400).json({ error: 'Missing "profile" (or "movieData") in request body.' });
+            }
+            if (!movies.isConfigured()) {
+                return res.status(503).json({
+                    error: 'Trakt connection unavailable.',
+                    details: 'Set TRAKT_CLIENT_ID to enable Trakt-based roasts.',
+                });
             }
             const cacheKey = movies.parseProfileInput(profile) || profile;
             data = getCachedMovieData(cacheKey);

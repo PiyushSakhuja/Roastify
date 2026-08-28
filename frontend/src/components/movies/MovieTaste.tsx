@@ -7,11 +7,20 @@ interface MovieTasteProps {
 /**
  * Derives a short taste-profile label purely from real calculated
  * patterns in the data — never a canned/random label. Each label has a
- * concrete numeric condition attached to it.
+ * concrete numeric condition attached to it. Top4 gets its own lighter
+ * framing since four movies can't support the same statistical claims as
+ * a full watch history.
  */
 function deriveTasteProfile(data: MovieRoastData): { label: string; reason: string } | null {
   const { evidence, totalMovies, averageRating } = data;
   if (!totalMovies) return null;
+
+  if (data.source === "top4") {
+    return {
+      label: "THE CURATED FOUR",
+      reason: "Not a history — a statement. Four movies, chosen on purpose.",
+    };
+  }
 
   if (evidence?.highRatingPercent !== undefined && evidence.highRatingPercent >= 70) {
     return {
@@ -67,6 +76,7 @@ export function MovieTaste({ data }: MovieTasteProps) {
   const genreEntries = Object.entries(data.evidence?.genreDistribution || {})
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
+  const isTop4 = data.source === "top4";
 
   return (
     <div className="space-y-5">
@@ -82,76 +92,97 @@ export function MovieTaste({ data }: MovieTasteProps) {
         </div>
       )}
 
-      <div className="rounded-2xl border border-line bg-charcoal/80 p-5 sm:p-6">
-        <p className="mb-4 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-movies)]">
-          Movie Taste
-        </p>
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
-              Genre breakdown
-            </p>
-            {genreEntries.length > 0 ? (
-              <ul className="space-y-1.5">
-                {genreEntries.map(([genre, pct]) => (
-                  <li
-                    key={genre}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-line/70 bg-ink/40 px-3 py-2"
-                  >
-                    <span className="truncate text-sm text-paper">{genre}</span>
-                    <span className="shrink-0 font-mono text-xs text-[var(--color-movies)]">{pct}%</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-smoke-dim">Not enough genre data yet.</p>
-            )}
-          </div>
-
-          <div>
-            <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
-              Recently watched
-            </p>
-            {data.recentMovies && data.recentMovies.length > 0 ? (
-              <ul className="space-y-1.5">
-                {data.recentMovies.slice(0, 5).map((title, i) => (
-                  <li
-                    key={`${title}-${i}`}
-                    className="flex items-center gap-2 rounded-lg border border-line/70 bg-ink/40 px-3 py-2"
-                  >
-                    <span className="font-mono text-[0.65rem] text-smoke-dim">{i + 1}</span>
-                    <span className="truncate text-sm text-paper">{title}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-smoke-dim">No recent activity on record.</p>
-            )}
-          </div>
+      {isTop4 ? (
+        <div className="rounded-2xl border border-line bg-charcoal/80 p-5 sm:p-6">
+          <p className="mb-4 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-movies)]">
+            The Four
+          </p>
+          <ul className="space-y-1.5">
+            {data.movies.map((movie, i) => (
+              <li
+                key={`${movie.title}-${i}`}
+                className="flex items-center gap-2.5 rounded-lg border border-line/70 bg-ink/40 px-3 py-2.5"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--color-movies)]/15 font-mono text-[0.6rem] text-[var(--color-movies)]">
+                  {i + 1}
+                </span>
+                <span className="truncate text-sm text-paper">{movie.title}</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      ) : (
+        <div className="rounded-2xl border border-line bg-charcoal/80 p-5 sm:p-6">
+          <p className="mb-4 font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[var(--color-movies)]">
+            Movie Taste
+          </p>
 
-        {(data.topDirectors.length > 0 || data.topActors.length > 0) && (
-          <div className="mt-5 grid gap-5 border-t border-line/60 pt-5 sm:grid-cols-2">
-            {data.topDirectors.length > 0 && (
-              <div>
-                <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
-                  Favorite directors
-                </p>
-                <p className="text-sm text-paper">{data.topDirectors.join(", ")}</p>
-              </div>
-            )}
-            {data.topActors.length > 0 && (
-              <div>
-                <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
-                  Favorite actors
-                </p>
-                <p className="text-sm text-paper">{data.topActors.join(", ")}</p>
-              </div>
-            )}
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
+                Genre breakdown
+              </p>
+              {genreEntries.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {genreEntries.map(([genre, pct]) => (
+                    <li
+                      key={genre}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-line/70 bg-ink/40 px-3 py-2"
+                    >
+                      <span className="truncate text-sm text-paper">{genre}</span>
+                      <span className="shrink-0 font-mono text-xs text-[var(--color-movies)]">{pct}%</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-smoke-dim">Not enough genre data yet.</p>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
+                {data.source === "letterboxd" ? "Recently logged" : "Recently watched"}
+              </p>
+              {data.recentMovies && data.recentMovies.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {data.recentMovies.slice(0, 5).map((title, i) => (
+                    <li
+                      key={`${title}-${i}`}
+                      className="flex items-center gap-2 rounded-lg border border-line/70 bg-ink/40 px-3 py-2"
+                    >
+                      <span className="font-mono text-[0.65rem] text-smoke-dim">{i + 1}</span>
+                      <span className="truncate text-sm text-paper">{title}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-smoke-dim">No recent activity on record.</p>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+
+          {(data.topDirectors.length > 0 || data.topActors.length > 0) && (
+            <div className="mt-5 grid gap-5 border-t border-line/60 pt-5 sm:grid-cols-2">
+              {data.topDirectors.length > 0 && (
+                <div>
+                  <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
+                    Favorite directors
+                  </p>
+                  <p className="text-sm text-paper">{data.topDirectors.join(", ")}</p>
+                </div>
+              )}
+              {data.topActors.length > 0 && (
+                <div>
+                  <p className="mb-2 font-mono text-[0.6rem] uppercase tracking-wide text-smoke-dim">
+                    Favorite actors
+                  </p>
+                  <p className="text-sm text-paper">{data.topActors.join(", ")}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

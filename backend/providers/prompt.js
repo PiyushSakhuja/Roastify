@@ -5,6 +5,82 @@
 // Adding a new roastable platform = adding one entry to PERSONAS below.
 // Provider files (groq.js/mistral.js/gemini.js) never need to change.
 
+/**
+ * Builds the roast prompt for Trakt or Letterboxd data — both are real
+ * watch-history sources, just with different depth of available fields
+ * (Letterboxd never has play counts/rewatch data, for instance).
+ */
+function buildHistoryPrompt(data, source) {
+    const {
+        username,
+        totalMovies,
+        topGenres,
+        topDirectors,
+        topActors,
+        averageRating,
+        favoriteDecades,
+        recentMovies,
+        evidence,
+    } = data;
+
+    const topRatedStr = (evidence?.topRated || [])
+        .filter((m) => m.title)
+        .map((m) => `${m.title} (${m.rating}/10)`)
+        .join(', ');
+
+    const sourceLabel = source === 'letterboxd' ? 'Letterboxd import' : 'Trakt';
+
+    return [
+        `Roast this person's real movie-watching history (source: ${sourceLabel}) based ONLY on the following data — do not invent anything beyond it.`,
+        username ? `Username: ${username}.` : null,
+        `Total movies analyzed: ${totalMovies}.`,
+        typeof averageRating === 'number' ? `Average rating they give: ${averageRating}/10.` : null,
+        topGenres?.length ? `Most-watched genres: ${topGenres.join(', ')}.` : null,
+        topDirectors?.length ? `Favorite directors: ${topDirectors.join(', ')}.` : null,
+        topActors?.length ? `Favorite actors: ${topActors.join(', ')}.` : null,
+        favoriteDecades?.length ? `Favorite decades: ${favoriteDecades.join(', ')}.` : null,
+        typeof evidence?.topGenrePercent === 'number'
+            ? `${evidence.topGenrePercent}% of everything they watch is ${topGenres?.[0] || 'one genre'}.`
+            : null,
+        typeof evidence?.highRatingPercent === 'number'
+            ? `${evidence.highRatingPercent}% of their ratings are 8/10 or higher.`
+            : null,
+        typeof evidence?.oldMoviePercent === 'number'
+            ? `${evidence.oldMoviePercent}% of what they've watched came out more than 15 years ago.`
+            : null,
+        evidence?.mostRewatched
+            ? `Their most-rewatched movie is ${evidence.mostRewatched.title}, watched ${evidence.mostRewatched.plays} times.`
+            : null,
+        topRatedStr ? `Their top-rated movies: ${topRatedStr}.` : null,
+        recentMovies?.length
+            ? `${source === 'letterboxd' ? 'Recently logged' : 'Recently watched'}: ${recentMovies.slice(0, 6).join(', ')}.`
+            : null,
+    ]
+        .filter(Boolean)
+        .join(' ');
+}
+
+/**
+ * Builds the roast prompt for a Top4 submission — explicitly frames this
+ * as four hand-picked favorites, not a history, so the model never treats
+ * it as if it had statistical watch data it doesn't actually have.
+ */
+function buildTop4Prompt(data) {
+    const titles = (data.movies || []).map((m) => m.title).filter(Boolean);
+
+    return [
+        `This is a "Top 4" submission: the person picked exactly these four favorite movies, nothing more. ` +
+            `This is NOT a watch history — do not imply they've only watched four movies ever, and do not invent ` +
+            `statistics like watch counts, ratings, or percentages that were never provided.`,
+        `Their four picks: ${titles.join(', ')}.`,
+        `Roast them based on what these four specific choices say about their taste, personality, and any ` +
+            `contradictions or patterns between the picks — treat it like sizing someone up from their favorite ` +
+            `movies at a party, not like reading a stats sheet.`,
+    ]
+        .filter(Boolean)
+        .join(' ');
+}
+
 const PERSONAS = {
   spotify: {
     systemPrompt:
@@ -76,61 +152,31 @@ const PERSONAS = {
     },
     movies: {
         systemPrompt:
-            "You are 'Reel Roast Bot,' a sharp, film-literate AI critic that roasts a person's real movie-watching habits. " +
+            "You are 'Reel Roast Bot,' a sharp, film-literate AI critic that roasts a person's real movie taste. " +
             'You are savage but always accurate — every joke must be traceable to a specific fact in the data you were given. ' +
-            'Notice things like: overreliance on one genre, an obsession with a particular director or actor, suspiciously ' +
-            'high average ratings, watching acclaimed films just to seem cultured, a huge watch count paired with vague taste, ' +
-            'excessive superhero/franchise consumption, only watching movies above a certain rating, an addiction to old ' +
-            'cinema or a refusal to watch anything before last year, avoiding popular movies, rewatching the same film an ' +
-            'absurd number of times, and extremely predictable, safe taste. Be funny, sharp, personalized, and film-aware — ' +
-            'never generic, and never invent movies, ratings, or facts that were not given to you. Never claim the person ' +
-            'liked or disliked something unless the data actually supports it. Your response must be a single, short, ' +
-            'contemptuous paragraph (4-6 sentences max). Do not use markdown formatting like bullet points or bold text in ' +
-            'the final output.',
+            'The data may come from three different sources with very different depth: a full Trakt watch history, an ' +
+            'imported Letterboxd export, or just four hand-picked favorite movies ("Top 4"). Adapt your approach to the ' +
+            'source: for Trakt or Letterboxd data, notice things like overreliance on one genre, an obsession with a ' +
+            'particular director or actor, suspiciously high average ratings, watching acclaimed films just to seem ' +
+            'cultured, a huge watch count paired with vague taste, excessive superhero/franchise consumption, only ' +
+            'watching movies above a certain rating, an addiction to old cinema or a refusal to watch anything before ' +
+            'last year, avoiding popular movies, rewatching the same film an absurd number of times, and extremely ' +
+            'predictable, safe taste. For a Top 4 submission, there is no statistical history to analyze — instead, be ' +
+            'more personality-focused: read what the four specific picks together say about the person (shared themes, ' +
+            'directors, tones, or a suspicious contradiction between them, like claiming sophistication while picking ' +
+            'the most crowd-pleasing blockbuster available), the way a sharp friend would size someone up from their ' +
+            'four favorite movies at a party. Be funny, sharp, personalized, and film-aware — never generic, and never ' +
+            'invent movies, ratings, statistics, or facts that were not given to you. Never claim the person liked or ' +
+            'disliked something unless the data actually supports it, and never treat a Top 4 submission as if it were ' +
+            'a complete watch history (do not say things like "you\'ve watched hundreds of movies" when only four were ' +
+            'given). Your response must be a single, short, contemptuous paragraph (4-6 sentences max). Do not use ' +
+            'markdown formatting like bullet points or bold text in the final output.',
         buildUserPrompt: (data) => {
-            const {
-                username,
-                totalMovies,
-                topGenres,
-                topDirectors,
-                topActors,
-                averageRating,
-                favoriteDecades,
-                recentMovies,
-                evidence,
-            } = data;
-
-            const topRatedStr = (evidence?.topRated || [])
-                .filter((m) => m.title)
-                .map((m) => `${m.title} (${m.rating}/10)`)
-                .join(', ');
-
-            return [
-                `Roast this person's real movie-watching history based ONLY on the following data — do not invent anything beyond it.`,
-                username ? `Trakt username: ${username}.` : null,
-                `Total movies watched: ${totalMovies}.`,
-                typeof averageRating === 'number' ? `Average rating they give: ${averageRating}/10.` : null,
-                topGenres?.length ? `Most-watched genres: ${topGenres.join(', ')}.` : null,
-                topDirectors?.length ? `Favorite directors: ${topDirectors.join(', ')}.` : null,
-                topActors?.length ? `Favorite actors: ${topActors.join(', ')}.` : null,
-                favoriteDecades?.length ? `Favorite decades: ${favoriteDecades.join(', ')}.` : null,
-                typeof evidence?.topGenrePercent === 'number'
-                    ? `${evidence.topGenrePercent}% of everything they watch is ${topGenres?.[0] || 'one genre'}.`
-                    : null,
-                typeof evidence?.highRatingPercent === 'number'
-                    ? `${evidence.highRatingPercent}% of their ratings are 8/10 or higher.`
-                    : null,
-                typeof evidence?.oldMoviePercent === 'number'
-                    ? `${evidence.oldMoviePercent}% of what they've watched came out more than 15 years ago.`
-                    : null,
-                evidence?.mostRewatched
-                    ? `Their most-rewatched movie is ${evidence.mostRewatched.title}, watched ${evidence.mostRewatched.plays} times.`
-                    : null,
-                topRatedStr ? `Their top-rated movies: ${topRatedStr}.` : null,
-                recentMovies?.length ? `Recently watched: ${recentMovies.slice(0, 6).join(', ')}.` : null,
-            ]
-                .filter(Boolean)
-                .join(' ');
+            const source = data.source || 'trakt';
+            if (source === 'top4') {
+                return buildTop4Prompt(data);
+            }
+            return buildHistoryPrompt(data, source);
         },
     },
     valorant: {

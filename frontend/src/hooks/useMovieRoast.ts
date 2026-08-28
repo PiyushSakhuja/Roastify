@@ -77,6 +77,30 @@ export function useMovieRoast() {
     }
   }, []);
 
+  /**
+   * For sources that normalize entirely client-side (Letterboxd CSV, Top4)
+   * — skips the fetch step and goes straight to the roast, since the data
+   * is already in hand.
+   */
+  const connectWithData = useCallback(async (movieData: MovieRoastData, provider?: string) => {
+    setState({ ...initialState, status: "generating-roast", movieData });
+    try {
+      const { roastText, provider: usedProvider, movieData: finalData } =
+        await getRoastFromBackend(movieData, provider);
+
+      setState({
+        status: "done",
+        roastText,
+        movieData: finalData,
+        provider: usedProvider ?? null,
+        errorMessage: null,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState({ ...initialState, status: "error", errorMessage: message });
+    }
+  }, []);
+
   const regenerate = useCallback(
     async (provider?: string) => {
       if (!state.movieData) return;
@@ -102,5 +126,5 @@ export function useMovieRoast() {
 
   const reset = useCallback(() => setState(initialState), []);
 
-  return { ...state, connect, regenerate, reset };
+  return { ...state, connect, connectWithData, regenerate, reset };
 }
