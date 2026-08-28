@@ -34,11 +34,11 @@ export function PlatformCard({
       transition={{ duration: 0.5, delay: Math.min(index * 0.06, 0.4), ease: [0.16, 1, 0.3, 1] }}
       style={{ ["--accent" as string]: `var(--color-${platform.accent})` }}
       className={cx(
-        "group relative flex flex-col overflow-hidden rounded-2xl border p-5",
+        "group relative flex h-full flex-col overflow-hidden rounded-2xl border p-5",
         "bg-charcoal/80 backdrop-blur-sm transition-all duration-300",
         isSealed
           ? "border-line/60 opacity-60"
-          : "border-line hover:border-[var(--accent)]/50 hover:-translate-y-1",
+          : "border-line hover:border-[var(--accent)]/50 hover:-translate-y-1 hover:shadow-lg",
         selected && "border-acid/70 ring-1 ring-acid/40"
       )}
     >
@@ -86,7 +86,7 @@ export function PlatformCard({
 
       {/* Real platform logo — same PNG asset the 3D scene uses. */}
       <div
-        className="relative mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-line"
+        className="relative mb-4 flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl border border-line"
         style={{ background: `color-mix(in srgb, var(--accent) 12%, transparent)` }}
       >
         {/* Logo glow on hover — accent color only, never the brand color tinted. */}
@@ -107,7 +107,9 @@ export function PlatformCard({
       <p className="mb-3 font-mono text-[0.68rem] uppercase tracking-wider text-[var(--accent)]">
         {platform.tagline}
       </p>
-      <p className="mb-5 flex-1 text-sm leading-relaxed text-smoke">
+      
+      {/* Description with fixed height to maintain card consistency */}
+      <p className="mb-4 flex-1 text-sm leading-relaxed text-smoke line-clamp-2">
         {platform.description}
       </p>
 
@@ -127,35 +129,37 @@ export function PlatformCard({
         </dl>
       )}
 
-      {/* CTA */}
-      {!selectable &&
-        (isSealed ? (
-          <div className="rounded-full border border-dashed border-line px-4 py-2.5 text-center text-xs font-medium text-smoke-dim">
-            Coming soon
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onRoast?.(platform.id)}
-            className={cx(
-              "flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition",
-              isConnected
-                ? "bg-verdict text-ink hover:brightness-110"
-                : "border border-line bg-charcoal-2 text-paper hover:border-[var(--accent)]/60"
-            )}
-          >
-            {isConnected ? "Roast Me" : "Connect & Roast"}
-            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
-              <path
-                d="M6 4l4 4-4 4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        ))}
+      {/* CTA - pushed to bottom for consistent alignment */}
+      <div className="mt-auto">
+        {!selectable &&
+          (isSealed ? (
+            <div className="rounded-full border border-dashed border-line px-4 py-2.5 text-center text-xs font-medium text-smoke-dim">
+              Coming soon
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onRoast?.(platform.id)}
+              className={cx(
+                "flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition",
+                isConnected
+                  ? "bg-verdict text-ink hover:brightness-110"
+                  : "border border-line bg-charcoal-2 text-paper hover:border-[var(--accent)]/60 hover:bg-[var(--accent)]/10"
+              )}
+            >
+              {isConnected ? (platform.ctaText || "Roast Me") : (platform.ctaTextDisconnected || "Connect & Roast")}
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
+                <path
+                  d="M6 4l4 4-4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ))}
+      </div>
     </motion.article>
   );
 }

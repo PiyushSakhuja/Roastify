@@ -42,9 +42,9 @@ export function Hero() {
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1], delay: 0.05 }}
           className="text-balance font-display text-[2.75rem] uppercase leading-[0.98] tracking-tight text-paper sm:text-[4.75rem]"
         >
-          What do you want
+          Your digital life.
           <br />
-          <span className="text-verdict">to get roasted</span> for?
+          <span className="text-verdict">Our judgment.</span>
         </motion.h1>
 
         <motion.p
@@ -53,8 +53,7 @@ export function Hero() {
           transition={{ duration: 0.6, delay: 0.18 }}
           className="mx-auto mt-6 max-w-xl text-balance text-base text-smoke sm:text-lg"
         >
-          Connect a platform. We'll read everything, judge you instantly,
-          and hand down a verdict with zero chance of appeal.
+          Connect your favorite platforms and find out what your online habits say about you.
         </motion.p>
 
         <motion.div

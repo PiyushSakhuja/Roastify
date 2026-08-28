@@ -28,4 +28,10 @@ export interface Platform {
   connectionState: ConnectionState;
   mockStats?: PlatformStat[];
   roastPreview?: string;
+  /** Navigation route for this platform's roast page */
+  route?: string | null;
+  /** CTA button text when connected */
+  ctaText?: string | null;
+  /** CTA button text when disconnected */
+  ctaTextDisconnected?: string | null;
 }

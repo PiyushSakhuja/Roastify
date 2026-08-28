@@ -1,3 +1,5 @@
+import { BRAND_CONFIG } from "../config/branding";
+
 export function Footer() {
   return (
     <footer className="border-t border-line/60 px-6 py-10">
@@ -9,11 +11,11 @@ export function Footer() {
             </span>
           </span>
           <span className="font-mono text-xs uppercase tracking-wider text-smoke-dim">
-            Roastify &middot; Your digital life. Our judgment.
+            {BRAND_CONFIG.name} &middot; {BRAND_CONFIG.tagline}
           </span>
         </div>
         <p className="font-mono text-[0.65rem] text-smoke-dim">
-          No data is stored. Only dignity.
+          {BRAND_CONFIG.footerSubtitle}
         </p>
       </div>
     </footer>
