@@ -2,11 +2,6 @@ export type PlatformCategory = "music" | "gaming" | "movies" | "developer";
 
 export type ConnectionState = "connected" | "disconnected" | "coming-soon";
 
-export interface PlatformStat {
-  label: string;
-  value: string;
-}
-
 export interface Platform {
   id: string;
   name: string;
@@ -26,8 +21,6 @@ export interface Platform {
   icon: React.ComponentType<{ className?: string }>;
   available: boolean;
   connectionState: ConnectionState;
-  mockStats?: PlatformStat[];
-  roastPreview?: string;
   /** Navigation route for this platform's roast page */
   route?: string | null;
   /** CTA button text when connected */

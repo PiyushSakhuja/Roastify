@@ -113,22 +113,6 @@ export function PlatformCard({
         {platform.description}
       </p>
 
-      {/* Mock stats strip */}
-      {platform.mockStats && !isSealed && (
-        <dl className="mb-5 grid grid-cols-3 gap-2 rounded-lg border border-line/70 bg-ink/40 p-2.5">
-          {platform.mockStats.map((stat) => (
-            <div key={stat.label} className="min-w-0">
-              <dt className="truncate font-mono text-[0.55rem] uppercase tracking-wide text-smoke-dim">
-                {stat.label}
-              </dt>
-              <dd className="truncate text-xs font-semibold text-paper">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-
       {/* CTA - pushed to bottom for consistent alignment */}
       <div className="mt-auto">
         {!selectable &&

@@ -85,8 +85,7 @@ export function RoastModal({ platform, onClose }: RoastModalProps) {
               </div>
 
               <p className="text-balance text-lg leading-relaxed text-paper">
-                {platform.roastPreview ??
-                  "This exhibit hasn't been connected yet. No data, no verdict."}
+                This is a preview modal. Connect a platform to see your actual roast.
               </p>
 
               <div className="mt-6 flex gap-2.5">
