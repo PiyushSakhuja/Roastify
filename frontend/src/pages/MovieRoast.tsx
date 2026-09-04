@@ -10,6 +10,9 @@ import { MovieTaste } from "../components/movies/MovieTaste";
 import { MovieRoastResult } from "../components/movies/MovieRoastResult";
 import { MovieShelf } from "../components/movies/MovieShelf";
 import { MovieStats } from "../components/movies/MovieStats";
+import { IntensitySelector } from "../components/shared/IntensitySelector";
+import { SentenceLine, getSentence } from "../components/shared/SentenceLine";
+import { VerdictCard } from "../components/shared/VerdictCard";
 
 interface ProviderOption {
   id: string;
@@ -147,6 +150,18 @@ export function MovieRoastPage() {
         {/* Source selection — the entry screen */}
         {movie.status === "idle" && screen === "source-select" && (
           <MovieSourceSelector onSelect={handleSelectSource} />
+        )}
+
+        {/* Roast intensity — shown once any source has been picked, applies
+            to whichever flow the user completes next. */}
+        {movie.status === "idle" && screen !== "source-select" && (
+          <div className="mx-auto mb-6 max-w-md">
+            <IntensitySelector
+              value={movie.intensity}
+              onChange={movie.setIntensity}
+              accent="movies"
+            />
+          </div>
         )}
 
         {/* Trakt: existing connection form, unchanged behavior */}
@@ -300,13 +315,14 @@ export function MovieRoastPage() {
               provider={movie.provider}
               data={movie.movieData}
             />
+            <SentenceLine platform="movies" seed={movie.roastText} />
             <MovieShelf data={movie.movieData} />
 
             {/* Actions */}
             <div className="flex flex-col gap-2.5 sm:flex-row">
               <button
                 type="button"
-                onClick={() => movie.regenerate(selectedProvider || undefined)}
+                onClick={() => movie.regenerate(selectedProvider || undefined, movie.intensity)}
                 className="flex-1 rounded-full bg-verdict px-5 py-3 text-sm font-semibold text-ink transition hover:brightness-110"
               >
                 Roast Me Again
@@ -342,6 +358,29 @@ export function MovieRoastPage() {
                 Back to Dashboard
               </Link>
             </div>
+
+            <div className="rounded-2xl border border-line bg-charcoal/80 p-5">
+              <IntensitySelector
+                value={movie.intensity}
+                onChange={movie.setIntensity}
+                accent="movies"
+              />
+            </div>
+
+            <VerdictCard
+              platformName="Movies"
+              accentColor="#F5C242"
+              roastText={movie.roastText}
+              evidence={[
+                movie.movieData.source === "top4"
+                  ? `Analyzed ${movie.movieData.movies.length} movies`
+                  : `${movie.movieData.totalMovies} movies watched`,
+                movie.movieData.topGenres?.length
+                  ? `Top genres: ${movie.movieData.topGenres.slice(0, 3).join(", ")}`
+                  : "",
+              ].filter(Boolean)}
+              sentence={getSentence("movies", movie.roastText)}
+            />
           </div>
         )}
       </main>

@@ -70,6 +70,29 @@ function getBackendUrl(): string {
   return (window as any).ROASTIFY_BACKEND_URL || "http://localhost:8888";
 }
 
+/**
+ * A bare `fetch()` throw (TypeError: Failed to fetch) gives users zero
+ * context — could be no internet, could be the backend URL pointing at
+ * localhost in a production build, could be CORS. Distinguish the common
+ * "can't reach the backend at all" case and say so plainly, since that's
+ * almost always either a misconfigured deploy or the backend being down —
+ * not something the retry loop can fix.
+ */
+function toFriendlyNetworkError(error: unknown, url: string): Error {
+  const isNetworkFailure = error instanceof TypeError;
+  if (!isNetworkFailure) return error instanceof Error ? error : new Error(String(error));
+
+  const isLocalhost = url.includes("localhost") || url.includes("127.0.0.1");
+  if (isLocalhost && (window as any).ROASTIFY_MISCONFIGURED) {
+    return new Error(
+      "Can't reach the Roastify backend — this deployment was built without a backend URL configured, so it's trying to reach localhost. This needs to be fixed by whoever deployed the site."
+    );
+  }
+  return new Error(
+    `Can't reach the Roastify backend at ${new URL(url).origin}. It may be down, or there may be a network/CORS issue. Try again in a moment.`
+  );
+}
+
 async function fetchWithRetry(url: string, options?: RequestInit, retries = 3, delay = 1000): Promise<Response> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -84,7 +107,7 @@ async function fetchWithRetry(url: string, options?: RequestInit, retries = 3, d
       }
       return response;
     } catch (error) {
-      if (i === retries - 1) throw error;
+      if (i === retries - 1) throw toFriendlyNetworkError(error, url);
       await new Promise((resolve) => setTimeout(resolve, delay * 2 ** i));
     }
   }
@@ -98,6 +121,14 @@ async function fetchWithRetry(url: string, options?: RequestInit, retries = 3, d
  * the frontend never has to special-case it).
  */
 export function initiateValorantLogin() {
+  if ((window as any).ROASTIFY_MISCONFIGURED) {
+    // This is a full page navigation, not a fetch — if it fires against an
+    // unreachable localhost backend, the tab just goes dead with no chance
+    // to show an in-app error afterward. Refuse before navigating instead.
+    throw new Error(
+      "Can't connect — this deployment was built without a backend URL configured. This needs to be fixed by whoever deployed the site."
+    );
+  }
   window.location.href = `${getBackendUrl()}/api/valorant/auth`;
 }
 
@@ -125,12 +156,13 @@ export async function fetchValorantProfile(sessionId: string): Promise<ValorantR
 /** Generates (or regenerates) a roast for an existing session, reusing cached match data. */
 export async function getValorantRoast(
   sessionId: string,
-  provider?: string
+  provider?: string,
+  intensity?: string
 ): Promise<{ roastText: string; provider?: string; profile: ValorantRoastData }> {
   const response = await fetchWithRetry(`${getBackendUrl()}/api/valorant/roast`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, provider }),
+    body: JSON.stringify({ sessionId, provider, intensity }),
   });
 
   const result = await response.json();
@@ -141,10 +173,11 @@ export async function getValorantRoast(
 /** Full flow after the OAuth redirect: fetch profile -> generate roast. */
 export async function completeValorantRoastFlow(
   sessionId: string,
-  provider?: string
+  provider?: string,
+  intensity?: string
 ): Promise<{ profile: ValorantRoastData; roastText: string; provider?: string }> {
   const profile = await fetchValorantProfile(sessionId);
-  const { roastText, provider: usedProvider } = await getValorantRoast(sessionId, provider);
+  const { roastText, provider: usedProvider } = await getValorantRoast(sessionId, provider, intensity);
   return { profile, roastText, provider: usedProvider };
 }
 

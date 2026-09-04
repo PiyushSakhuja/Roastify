@@ -6,6 +6,7 @@ const axios = require('axios');
 const {
     getPersona,
     DEFAULT_KIND,
+    applyIntensity,
 } = require('./prompt');
 
 const API_URL =
@@ -27,7 +28,8 @@ module.exports = {
     // Steam
     async generateRoast(
         data,
-        kind = DEFAULT_KIND
+        kind = DEFAULT_KIND,
+        intensity
     ) {
         const persona = getPersona(kind);
 
@@ -41,7 +43,7 @@ module.exports = {
             persona.buildUserPrompt(data);
 
         return this.generateCompletion(
-            persona.systemPrompt,
+            applyIntensity(persona.systemPrompt, intensity),
             userQuery
         );
     },

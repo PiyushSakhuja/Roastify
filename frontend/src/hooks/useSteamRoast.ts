@@ -5,6 +5,7 @@ import {
   SteamPrivateProfileError,
   type SteamRoastData,
 } from "../integrations/steam";
+import type { RoastIntensity } from "../types/intensity";
 
 export type SteamFlowStatus =
   | "idle"
@@ -38,41 +39,46 @@ const initialState: SteamFlowState = {
  */
 export function useSteamRoast() {
   const [state, setState] = useState<SteamFlowState>(initialState);
+  const [intensity, setIntensity] = useState<RoastIntensity>("medium");
 
-  const connect = useCallback(async (profileInput: string, provider?: string) => {
-    setState({ ...initialState, status: "fetching-profile" });
-    try {
-      const steamData = await fetchSteamData(profileInput);
-      setState((prev) => ({ ...prev, status: "generating-roast", steamData }));
+  const connect = useCallback(
+    async (profileInput: string, provider?: string) => {
+      setState({ ...initialState, status: "fetching-profile" });
+      try {
+        const steamData = await fetchSteamData(profileInput);
+        setState((prev) => ({ ...prev, status: "generating-roast", steamData }));
 
-      const { roastText, provider: usedProvider, steamData: finalData } =
-        await getRoastFromBackend(steamData, provider);
+        const { roastText, provider: usedProvider, steamData: finalData } =
+          await getRoastFromBackend(steamData, provider, intensity);
 
-      setState({
-        status: "done",
-        roastText,
-        steamData: finalData,
-        provider: usedProvider ?? null,
-        errorMessage: null,
-      });
-    } catch (err) {
-      if (err instanceof SteamPrivateProfileError) {
-        setState({ ...initialState, status: "private", errorMessage: err.message });
-        return;
+        setState({
+          status: "done",
+          roastText,
+          steamData: finalData,
+          provider: usedProvider ?? null,
+          errorMessage: null,
+        });
+      } catch (err) {
+        if (err instanceof SteamPrivateProfileError) {
+          setState({ ...initialState, status: "private", errorMessage: err.message });
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        setState({ ...initialState, status: "error", errorMessage: message });
       }
-      const message = err instanceof Error ? err.message : String(err);
-      setState({ ...initialState, status: "error", errorMessage: message });
-    }
-  }, []);
+    },
+    [intensity]
+  );
 
   const regenerate = useCallback(
-    async (provider?: string) => {
+    async (provider?: string, overrideIntensity?: RoastIntensity) => {
       if (!state.steamData) return;
       setState((prev) => ({ ...prev, status: "generating-roast" }));
       try {
         const { roastText, provider: usedProvider } = await getRoastFromBackend(
           state.steamData,
-          provider
+          provider,
+          overrideIntensity || intensity
         );
         setState((prev) => ({
           ...prev,
@@ -85,10 +91,10 @@ export function useSteamRoast() {
         setState((prev) => ({ ...prev, status: "error", errorMessage: message }));
       }
     },
-    [state.steamData]
+    [state.steamData, intensity]
   );
 
   const reset = useCallback(() => setState(initialState), []);
 
-  return { ...state, connect, regenerate, reset };
+  return { ...state, connect, regenerate, reset, intensity, setIntensity };
 }

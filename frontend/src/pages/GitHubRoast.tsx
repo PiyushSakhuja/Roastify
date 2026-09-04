@@ -7,6 +7,9 @@ import { GitHubLanguages } from "../components/github/GitHubLanguages";
 import { GitHubStats } from "../components/github/GitHubStats";
 import { GitHubActivity } from "../components/github/GitHubActivity";
 import { GitHubRoastResult } from "../components/github/GitHubRoastResult";
+import { IntensitySelector } from "../components/shared/IntensitySelector";
+import { SentenceLine, getSentence } from "../components/shared/SentenceLine";
+import { VerdictCard } from "../components/shared/VerdictCard";
 
 const LOADING_MESSAGES = [
   "Analyzing your repositories...",
@@ -81,10 +84,15 @@ export function GitHubRoastPage() {
             <h1 className="font-display text-2xl uppercase tracking-wide text-paper mb-2">
               Connect GitHub
             </h1>
-            <p className="text-sm text-smoke mb-8 leading-relaxed">
+            <p className="text-sm text-smoke mb-6 leading-relaxed">
               We'll look at your public repositories, languages, and activity —
               then hand it to an AI that isn't going to be nice about it.
             </p>
+            <IntensitySelector
+              value={github.intensity}
+              onChange={github.setIntensity}
+              accent="github"
+            />
             <button
               type="button"
               onClick={github.connect}
@@ -126,12 +134,23 @@ export function GitHubRoastPage() {
                 provider={github.provider}
                 profile={github.profile}
               />
+              <div className="mt-3">
+                <SentenceLine platform="github" seed={github.roastText} />
+              </div>
+            </div>
+
+            <div className="border-t border-line pt-6">
+              <IntensitySelector
+                value={github.intensity}
+                onChange={github.setIntensity}
+                accent="github"
+              />
             </div>
 
             <div className="flex flex-wrap gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => github.regenerate()}
+                onClick={() => github.regenerate(undefined, github.intensity)}
                 className="rounded-md bg-paper text-ink px-4 py-2 text-sm font-semibold hover:bg-white transition-colors"
               >
                 Roast Me Again
@@ -164,6 +183,21 @@ export function GitHubRoastPage() {
               >
                 Back to Dashboard
               </Link>
+            </div>
+
+            <div className="border-t border-line pt-6">
+              <VerdictCard
+                platformName="GitHub"
+                accentColor="#A78BFA"
+                roastText={github.roastText}
+                evidence={[
+                  github.profile.topLanguages?.length
+                    ? `Top languages: ${github.profile.topLanguages.join(", ")}`
+                    : "",
+                  `${github.profile.publicRepos} public repos · ${github.profile.followers} followers`,
+                ].filter(Boolean)}
+                sentence={getSentence("github", github.roastText)}
+              />
             </div>
           </div>
         )}

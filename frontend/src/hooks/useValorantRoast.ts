@@ -9,6 +9,7 @@ import {
   ValorantSessionExpiredError,
   type ValorantRoastData,
 } from "../integrations/valorant";
+import type { RoastIntensity } from "../types/intensity";
 
 export type ValorantFlowStatus =
   | "idle"
@@ -48,6 +49,7 @@ const initialState: ValorantFlowState = {
  */
 export function useValorantRoast() {
   const [state, setState] = useState<ValorantFlowState>(initialState);
+  const [intensity, setIntensity] = useState<RoastIntensity>("medium");
 
   useEffect(() => {
     const { sessionId, error, errorDescription } = parseValorantCallback();
@@ -69,7 +71,7 @@ export function useValorantRoast() {
 
     setState({ ...initialState, status: "authenticating" });
 
-    completeValorantRoastFlow(sessionId)
+    completeValorantRoastFlow(sessionId, undefined, intensity)
       .then(({ roastText, provider, profile }) => {
         setState({
           status: "done",
@@ -92,18 +94,30 @@ export function useValorantRoast() {
         const message = err instanceof Error ? err.message : String(err);
         setState({ ...initialState, status: "error", errorMessage: message });
       });
+    // Deliberately runs once on mount only (OAuth callback handling) — the
+    // captured `intensity` is whatever was selected before clicking Connect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const connect = useCallback(() => {
-    initiateValorantLogin();
+    try {
+      initiateValorantLogin();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState({ ...initialState, status: "error", errorMessage: message });
+    }
   }, []);
 
   const regenerate = useCallback(
-    async (provider?: string) => {
+    async (provider?: string, overrideIntensity?: RoastIntensity) => {
       if (!state.sessionId) return;
       setState((prev) => ({ ...prev, status: "generating-roast" }));
       try {
-        const { roastText, provider: usedProvider, profile } = await getValorantRoast(state.sessionId, provider);
+        const { roastText, provider: usedProvider, profile } = await getValorantRoast(
+          state.sessionId,
+          provider,
+          overrideIntensity || intensity
+        );
         setState((prev) => ({
           ...prev,
           status: "done",
@@ -116,10 +130,10 @@ export function useValorantRoast() {
         setState((prev) => ({ ...prev, status: "error", errorMessage: message }));
       }
     },
-    [state.sessionId]
+    [state.sessionId, intensity]
   );
 
   const reset = useCallback(() => setState(initialState), []);
 
-  return { ...state, connect, regenerate, reset };
+  return { ...state, connect, regenerate, reset, intensity, setIntensity };
 }

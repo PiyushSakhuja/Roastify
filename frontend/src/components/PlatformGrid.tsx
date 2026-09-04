@@ -4,21 +4,9 @@ import { PlatformCard } from "./PlatformCard";
 
 interface PlatformGridProps {
   platforms: Platform[];
-  selectable?: boolean;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (id: string) => void;
-  onConnect?: (id: string) => void;
-  onRoast?: (id: string) => void;
 }
 
-export function PlatformGrid({
-  platforms,
-  selectable = false,
-  selectedIds,
-  onToggleSelect,
-  onConnect,
-  onRoast,
-}: PlatformGridProps) {
+export function PlatformGrid({ platforms }: PlatformGridProps) {
   if (platforms.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-line py-16 text-center">
@@ -33,20 +21,8 @@ export function PlatformGrid({
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
       <AnimatePresence mode="popLayout">
         {platforms.map((platform, index) => (
-          <motion.div
-            key={platform.id}
-            layout
-            exit={{ opacity: 0, scale: 0.96 }}
-          >
-            <PlatformCard
-              platform={platform}
-              index={index}
-              selectable={selectable}
-              selected={selectedIds?.has(platform.id)}
-              onToggleSelect={onToggleSelect}
-              onConnect={onConnect}
-              onRoast={onRoast}
-            />
+          <motion.div key={platform.id} layout exit={{ opacity: 0, scale: 0.96 }} className="h-full">
+            <PlatformCard platform={platform} index={index} />
           </motion.div>
         ))}
       </AnimatePresence>

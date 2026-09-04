@@ -6,6 +6,7 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 const aiProviders = require('./providers');
 const steamPrompt = require('./providers/steamPrompt');
 const steamService = require('./services/steam');
@@ -46,7 +47,14 @@ const valorantProviderInfo = valorant.getActiveProviderInfo();
 if (valorantProviderInfo.provider === 'mock') {
     console.warn('VALORANT Roast is running in MOCK mode (VALORANT_PROVIDER=mock). This is for development/UI testing only — never real player data.');
 } else if (!valorantProviderInfo.configured) {
-    console.warn('VALORANT Roast disabled: set RIOT_RSO_CLIENT_ID, RIOT_RSO_CLIENT_SECRET, RIOT_API_KEY, and RIOT_RSO_REDIRECT_URI to enable it (see .env.example).');
+    const uri = process.env.RIOT_RSO_REDIRECT_URI;
+    if (uri && valorant.isPlaceholderRedirectUri(uri)) {
+        console.warn(
+            `VALORANT Roast disabled: RIOT_RSO_REDIRECT_URI is still set to the placeholder value from .env.example (${uri}). Replace it with your real deployed backend URL, e.g. https://your-actual-backend.com/api/valorant/callback.`
+        );
+    } else {
+        console.warn('VALORANT Roast disabled: set RIOT_RSO_CLIENT_ID, RIOT_RSO_CLIENT_SECRET, RIOT_API_KEY, and RIOT_RSO_REDIRECT_URI to enable it (see .env.example).');
+    }
 }
 // At least one AI provider must be configured, but which one is flexible.
 const configuredProviders = aiProviders.getConfiguredProviders();
@@ -76,6 +84,17 @@ const corsOptions = {
 };
 
 // --- Middleware ---
+// Behind a platform proxy (Render/Railway/Fly/etc), Express needs this to
+// read the real client IP from X-Forwarded-For — otherwise the rate limiter
+// below sees the proxy's IP for every request and either rate-limits everyone
+// together or nobody at all.
+app.set('trust proxy', 1);
+
+// Security headers. CSP is left in report-only-friendly defaults here since
+// this API serves JSON, not HTML, to third-party origins — tighten further
+// if you add server-rendered pages.
+app.use(helmet());
+
 app.use(cors(corsOptions));
 app.use(express.json());
 
@@ -245,10 +264,15 @@ app.get('/api/steam/games', async (req, res) => {
 // "steamData" (reuses cached data — powers "Roast Me Again" without
 // re-hitting the Steam API for the whole library every time).
 app.post('/api/steam/roast', async (req, res) => {
-    const { profile, steamData, provider } = req.body || {};
+    const { profile, steamData, provider, intensity } = req.body || {};
 
     if (provider !== undefined && typeof provider !== 'string') {
         return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+    if (intensity !== undefined && !aiProviders.isValidIntensity(intensity)) {
+        return res.status(400).json({
+            error: `intensity must be one of: ${aiProviders.INTENSITY_LEVELS.join(', ')}`,
+        });
     }
 
     if (!steamService.isConfigured()) {
@@ -276,7 +300,7 @@ app.post('/api/steam/roast', async (req, res) => {
             return res.status(400).json({ error: 'Invalid or incomplete Steam data provided.' });
         }
 
-        const systemPrompt = steamPrompt.SYSTEM_PROMPT;
+        const systemPrompt = aiProviders.applyIntensity(steamPrompt.SYSTEM_PROMPT, intensity);
         const userPrompt = steamPrompt.buildUserPrompt(data);
 
         const { roastText, provider: usedProvider } = await aiProviders.generateRoastFromPrompt(
@@ -416,13 +440,18 @@ app.get('/api/github/repos', requireGitHubConfigured, async (req, res) => {
 // /profile and /repos endpoints above exist per the requested route shape
 // and for any future incremental-loading UI, but /roast is the common path.
 app.post('/api/github/roast', requireGitHubConfigured, async (req, res) => {
-    const { sessionId, provider } = req.body || {};
+    const { sessionId, provider, intensity } = req.body || {};
 
     if (!sessionId || typeof sessionId !== 'string') {
         return res.status(400).json({ error: 'Missing sessionId in request body.' });
     }
     if (provider !== undefined && typeof provider !== 'string') {
         return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+    if (intensity !== undefined && !aiProviders.isValidIntensity(intensity)) {
+        return res.status(400).json({
+            error: `intensity must be one of: ${aiProviders.INTENSITY_LEVELS.join(', ')}`,
+        });
     }
 
     const token = getGitHubTokenForSession(sessionId);
@@ -447,7 +476,8 @@ app.post('/api/github/roast', requireGitHubConfigured, async (req, res) => {
         const { roastText, provider: usedProvider } = await aiProviders.generateRoast(
             normalized,
             provider || null,
-            'github'
+            'github',
+            intensity
         );
 
         res.json({ roastText, provider: usedProvider, profile: normalized });
@@ -592,10 +622,15 @@ app.get('/api/movies/history', requireMoviesConfigured, async (req, res) => {
 // already normalized client-side and never touches the Trakt service, so
 // this route intentionally does NOT sit behind requireMoviesConfigured.
 app.post('/api/movies/roast', async (req, res) => {
-    const { profile, movieData, provider } = req.body || {};
+    const { profile, movieData, provider, intensity } = req.body || {};
 
     if (provider !== undefined && typeof provider !== 'string') {
         return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+    if (intensity !== undefined && !aiProviders.isValidIntensity(intensity)) {
+        return res.status(400).json({
+            error: `intensity must be one of: ${aiProviders.INTENSITY_LEVELS.join(', ')}`,
+        });
     }
 
     try {
@@ -631,7 +666,8 @@ app.post('/api/movies/roast', async (req, res) => {
         const { roastText, provider: usedProvider } = await aiProviders.generateRoast(
             data,
             provider || null,
-            'movies'
+            'movies',
+            intensity
         );
 
         res.json({ roastText, provider: usedProvider, movieData: data });
@@ -667,8 +703,13 @@ setInterval(() => {
 function requireValorantConfigured(req, res, next) {
     const info = valorant.getActiveProviderInfo();
     if (!info.configured) {
+        const uri = process.env.RIOT_RSO_REDIRECT_URI;
+        const isPlaceholder = uri && valorant.isPlaceholderRedirectUri(uri);
         return res.status(503).json({
             error: 'VALORANT integration is currently being configured.',
+            details: isPlaceholder
+                ? 'RIOT_RSO_REDIRECT_URI is still set to the .env.example placeholder value. This must be replaced with the real deployed backend URL before VALORANT login will work.'
+                : undefined,
             code: 'NOT_CONFIGURED',
         });
     }
@@ -813,13 +854,18 @@ app.get('/api/valorant/matches', requireValorantConfigured, async (req, res) => 
 });
 
 app.post('/api/valorant/roast', requireValorantConfigured, async (req, res) => {
-    const { sessionId, provider } = req.body || {};
+    const { sessionId, provider, intensity } = req.body || {};
 
     if (!sessionId || typeof sessionId !== 'string') {
         return res.status(400).json({ error: 'Missing sessionId in request body.' });
     }
     if (provider !== undefined && typeof provider !== 'string') {
         return res.status(400).json({ error: 'provider must be a string if provided.' });
+    }
+    if (intensity !== undefined && !aiProviders.isValidIntensity(intensity)) {
+        return res.status(400).json({
+            error: `intensity must be one of: ${aiProviders.INTENSITY_LEVELS.join(', ')}`,
+        });
     }
 
     try {
@@ -828,7 +874,8 @@ app.post('/api/valorant/roast', requireValorantConfigured, async (req, res) => {
         const { roastText, provider: usedProvider } = await aiProviders.generateRoast(
             profile,
             provider || null,
-            'valorant'
+            'valorant',
+            intensity
         );
 
         res.json({ roastText, provider: usedProvider, profile });

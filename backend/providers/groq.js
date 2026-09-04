@@ -8,6 +8,7 @@ const {
     DEFAULT_KIND,
     SYSTEM_PROMPT,
     buildUserPrompt,
+    applyIntensity,
 } = require('./prompt');
 
 const API_URL =
@@ -26,7 +27,8 @@ module.exports = {
     // Supports Spotify, GitHub and Steam
     async generateRoast(
         data,
-        kind = DEFAULT_KIND
+        kind = DEFAULT_KIND,
+        intensity
     ) {
         let systemPrompt;
         let userPrompt;
@@ -37,7 +39,7 @@ module.exports = {
 
             if (persona) {
                 systemPrompt =
-                    persona.systemPrompt;
+                    applyIntensity(persona.systemPrompt, intensity);
 
                 userPrompt =
                     persona.buildUserPrompt(data);

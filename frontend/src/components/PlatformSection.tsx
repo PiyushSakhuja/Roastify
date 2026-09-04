@@ -7,15 +7,9 @@ import { PlatformGrid } from "./PlatformGrid";
 
 interface PlatformSectionProps {
   platforms: Platform[];
-  onConnect: (id: string) => void;
-  onRoast: (id: string) => void;
 }
 
-export function PlatformSection({
-  platforms,
-  onConnect,
-  onRoast,
-}: PlatformSectionProps) {
+export function PlatformSection({ platforms }: PlatformSectionProps) {
   const [category, setCategory] = useState<CategoryId>("all");
 
   const filtered = useMemo(() => {
@@ -43,11 +37,7 @@ export function PlatformSection({
         <CategoryFilter active={category} onChange={setCategory} />
       </motion.div>
 
-      <PlatformGrid
-        platforms={filtered}
-        onConnect={onConnect}
-        onRoast={onRoast}
-      />
+      <PlatformGrid platforms={filtered} />
     </section>
   );
 }

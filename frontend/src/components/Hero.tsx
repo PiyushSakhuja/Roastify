@@ -33,7 +33,7 @@ export function Hero() {
           className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-charcoal/80 px-3.5 py-1.5 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-smoke backdrop-blur-sm"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-verdict animate-pulse-slow" />
-          Case file open &middot; 5 exhibits connected
+          Case file open &middot; 5 exhibits available
         </motion.div>
 
         <motion.h1
@@ -68,12 +68,6 @@ export function Hero() {
             className="group relative overflow-hidden rounded-full bg-verdict px-7 py-3 text-sm font-semibold text-ink transition hover:brightness-110"
           >
             Choose your exhibit
-          </a>
-          <a
-            href="#combined"
-            className="rounded-full border border-line bg-charcoal/70 px-7 py-3 text-sm font-semibold text-paper backdrop-blur-sm transition hover:border-smoke-dim"
-          >
-            Roast everything at once
           </a>
         </motion.div>
 

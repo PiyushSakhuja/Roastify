@@ -2,11 +2,6 @@ export type PlatformCategory = "music" | "gaming" | "movies" | "developer";
 
 export type ConnectionState = "connected" | "disconnected" | "coming-soon";
 
-export interface PlatformStat {
-  label: string;
-  value: string;
-}
-
 export interface Platform {
   id: string;
   name: string;
@@ -21,11 +16,12 @@ export interface Platform {
    *  sprite texture and the 2D card <img>. Never hardcode a logo per platform;
    *  every platform resolves its logo via this field. */
   logo: string;
-  /** Icon renderer — kept for backwards-compat, used by CombinedRoastCard chips
-   *  and RoastModal where a vector recolors better than a raster PNG. */
+  /** Icon renderer — kept for backwards-compat, used by CategoryFilter chips. */
   icon: React.ComponentType<{ className?: string }>;
   available: boolean;
+  /** Where clicking this card's CTA navigates. Every platform with a real
+   *  integration must set this — no platform should fall back to a fake
+   *  in-place "roast" with canned copy. */
+  route: string;
   connectionState: ConnectionState;
-  mockStats?: PlatformStat[];
-  roastPreview?: string;
 }

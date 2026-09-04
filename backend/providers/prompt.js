@@ -233,10 +233,44 @@ function getPersona(kind) {
     return PERSONAS[kind] || PERSONAS[DEFAULT_KIND];
 }
 
+// --------------------------------------------------
+// Roast intensity — a real modifier appended to the system prompt, not a
+// cosmetic label. Same persona, same facts, different tone dial.
+// --------------------------------------------------
+const INTENSITY_MODIFIERS = {
+    mild: 'Keep the tone playful and gentle — light ribbing, not real cruelty. Think "friend teasing a friend," not "internet troll."',
+    medium: 'Use your normal savage-but-fair tone as described above.',
+    'no-mercy':
+        'Go significantly harder than usual: sharper, more cutting, more relentless. Still every joke must trace to a real fact in the data — no invented insults — but pull no punches on delivery.',
+};
+const DEFAULT_INTENSITY = 'medium';
+
+function isValidIntensity(intensity) {
+    return typeof intensity === 'string' && Object.prototype.hasOwnProperty.call(INTENSITY_MODIFIERS, intensity);
+}
+
+/**
+ * Applies an intensity modifier to a persona's system prompt. Falls back to
+ * 'medium' (a no-op relative to the base persona) for missing/invalid input
+ * rather than erroring — intensity is a nice-to-have, not a required field.
+ */
+function applyIntensity(systemPrompt, intensity) {
+    const key = isValidIntensity(intensity) ? intensity : DEFAULT_INTENSITY;
+    return `${systemPrompt} ${INTENSITY_MODIFIERS[key]}`;
+}
+
 /** Kept for backward compatibility — existing Spotify-only call sites. */
 const SYSTEM_PROMPT = PERSONAS.spotify.systemPrompt;
 function buildUserPrompt(data) {
     return PERSONAS.spotify.buildUserPrompt(data);
 }
 
-module.exports = { SYSTEM_PROMPT, buildUserPrompt, getPersona, DEFAULT_KIND };
+module.exports = {
+    SYSTEM_PROMPT,
+    buildUserPrompt,
+    getPersona,
+    DEFAULT_KIND,
+    applyIntensity,
+    isValidIntensity,
+    INTENSITY_LEVELS: Object.keys(INTENSITY_MODIFIERS),
+};

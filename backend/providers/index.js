@@ -48,12 +48,14 @@ function listProvidersStatus() {
  * @param {object} data
  * @param {string|null} preferredProviderId
  * @param {string} kind - spotify | github | steam
+ * @param {string} [intensity] - mild | medium | no-mercy
  * @returns {Promise<{roastText: string, provider: string}>}
  */
 async function generateRoast(
     data,
     preferredProviderId = null,
-    kind = 'spotify'
+    kind = 'spotify',
+    intensity
 ) {
     const configured = getConfiguredProviders();
 
@@ -88,7 +90,8 @@ async function generateRoast(
         const roastText =
             await provider.generateRoast(
                 data,
-                kind
+                kind,
+                intensity
             );
 
         return {
@@ -108,7 +111,8 @@ async function generateRoast(
             const roastText =
                 await provider.generateRoast(
                     data,
-                    kind
+                    kind,
+                    intensity
                 );
 
             return {
@@ -233,9 +237,14 @@ async function generateRoastFromPrompt(
     );
 }
 
+const { isValidIntensity, INTENSITY_LEVELS, applyIntensity } = require('./prompt');
+
 module.exports = {
     generateRoast,
     generateRoastFromPrompt,
     listProvidersStatus,
     getConfiguredProviders,
+    isValidIntensity,
+    INTENSITY_LEVELS,
+    applyIntensity,
 };

@@ -38,6 +38,29 @@ function getBackendUrl(): string {
   return (window as any).ROASTIFY_BACKEND_URL || "http://localhost:8888";
 }
 
+/**
+ * A bare `fetch()` throw (TypeError: Failed to fetch) gives users zero
+ * context — could be no internet, could be the backend URL pointing at
+ * localhost in a production build, could be CORS. Distinguish the common
+ * "can't reach the backend at all" case and say so plainly, since that's
+ * almost always either a misconfigured deploy or the backend being down —
+ * not something the retry loop can fix.
+ */
+function toFriendlyNetworkError(error: unknown, url: string): Error {
+  const isNetworkFailure = error instanceof TypeError;
+  if (!isNetworkFailure) return error instanceof Error ? error : new Error(String(error));
+
+  const isLocalhost = url.includes("localhost") || url.includes("127.0.0.1");
+  if (isLocalhost && (window as any).ROASTIFY_MISCONFIGURED) {
+    return new Error(
+      "Can't reach the Roastify backend — this deployment was built without a backend URL configured, so it's trying to reach localhost. This needs to be fixed by whoever deployed the site."
+    );
+  }
+  return new Error(
+    `Can't reach the Roastify backend at ${new URL(url).origin}. It may be down, or there may be a network/CORS issue. Try again in a moment.`
+  );
+}
+
 function getRedirectUri(): string {
   return window.location.origin + REDIRECT_PATH;
 }
@@ -76,7 +99,7 @@ async function fetchWithRetry(
       }
       return response;
     } catch (error) {
-      if (i === retries - 1) throw error;
+      if (i === retries - 1) throw toFriendlyNetworkError(error, url);
       await new Promise((resolve) => setTimeout(resolve, delay * 2 ** i));
     }
   }
@@ -122,12 +145,13 @@ async function exchangeCodeForSession(code: string): Promise<string> {
  */
 export async function getGitHubRoast(
   sessionId: string,
-  provider?: string
+  provider?: string,
+  intensity?: string
 ): Promise<{ roastText: string; provider?: string; profile: GitHubRoastData }> {
   const response = await fetchWithRetry(`${getBackendUrl()}/api/github/roast`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId, provider }),
+    body: JSON.stringify({ sessionId, provider, intensity }),
   });
 
   const result = await response.json();
@@ -140,10 +164,11 @@ export async function getGitHubRoast(
 /** Full flow: exchange code -> get session -> fetch+normalize+roast. */
 export async function completeGitHubRoastFlow(
   code: string,
-  provider?: string
+  provider?: string,
+  intensity?: string
 ): Promise<{ sessionId: string; roastText: string; provider?: string; profile: GitHubRoastData }> {
   const sessionId = await exchangeCodeForSession(code);
-  const { roastText, provider: usedProvider, profile } = await getGitHubRoast(sessionId, provider);
+  const { roastText, provider: usedProvider, profile } = await getGitHubRoast(sessionId, provider, intensity);
   return { sessionId, roastText, provider: usedProvider, profile };
 }
 

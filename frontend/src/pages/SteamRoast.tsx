@@ -7,6 +7,9 @@ import { SteamProfile } from "../components/steam/SteamProfile";
 import { SteamGamingDNA } from "../components/steam/SteamGamingDNA";
 import { SteamLibrary } from "../components/steam/SteamLibrary";
 import { SteamRoastResult } from "../components/steam/SteamRoastResult";
+import { IntensitySelector } from "../components/shared/IntensitySelector";
+import { SentenceLine, getSentence } from "../components/shared/SentenceLine";
+import { VerdictCard } from "../components/shared/VerdictCard";
 
 interface ProviderOption {
   id: string;
@@ -140,6 +143,13 @@ export function SteamRoastPage() {
             <SteamStats
               onSubmit={(profile) => steam.connect(profile, selectedProvider || undefined)}
             />
+            <div className="mt-5 border-t border-line/60 pt-5">
+              <IntensitySelector
+                value={steam.intensity}
+                onChange={steam.setIntensity}
+                accent="steam"
+              />
+            </div>
           </div>
         )}
 
@@ -206,13 +216,22 @@ export function SteamRoastPage() {
               provider={steam.provider}
               data={steam.steamData}
             />
+            <SentenceLine platform="steam" seed={steam.roastText} />
             <SteamLibrary data={steam.steamData} />
+
+            <div className="rounded-2xl border border-line bg-charcoal/80 p-5">
+              <IntensitySelector
+                value={steam.intensity}
+                onChange={steam.setIntensity}
+                accent="steam"
+              />
+            </div>
 
             {/* Actions */}
             <div className="flex flex-col gap-2.5 sm:flex-row">
               <button
                 type="button"
-                onClick={() => steam.regenerate(selectedProvider || undefined)}
+                onClick={() => steam.regenerate(selectedProvider || undefined, steam.intensity)}
                 className="flex-1 rounded-full bg-verdict px-5 py-3 text-sm font-semibold text-ink transition hover:brightness-110"
               >
                 Roast Me Again
@@ -241,6 +260,19 @@ export function SteamRoastPage() {
                 Back to Dashboard
               </Link>
             </div>
+
+            <VerdictCard
+              platformName="Steam"
+              accentColor="#66C0F4"
+              roastText={steam.roastText}
+              evidence={[
+                `${steam.steamData.totalGames} games owned · ${Math.round(steam.steamData.totalPlaytimeHours)} hours played`,
+                steam.steamData.topGames?.length
+                  ? `Most played: ${steam.steamData.topGames[0]?.name}`
+                  : "",
+              ].filter(Boolean)}
+              sentence={getSentence("steam", steam.roastText)}
+            />
           </div>
         )}
       </main>

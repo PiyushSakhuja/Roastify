@@ -44,6 +44,29 @@ function getBackendUrl(): string {
 }
 
 /**
+ * A bare `fetch()` throw (TypeError: Failed to fetch) gives users zero
+ * context — could be no internet, could be the backend URL pointing at
+ * localhost in a production build, could be CORS. Distinguish the common
+ * "can't reach the backend at all" case and say so plainly, since that's
+ * almost always either a misconfigured deploy or the backend being down —
+ * not something the retry loop can fix.
+ */
+function toFriendlyNetworkError(error: unknown, url: string): Error {
+  const isNetworkFailure = error instanceof TypeError;
+  if (!isNetworkFailure) return error instanceof Error ? error : new Error(String(error));
+
+  const isLocalhost = url.includes("localhost") || url.includes("127.0.0.1");
+  if (isLocalhost && (window as any).ROASTIFY_MISCONFIGURED) {
+    return new Error(
+      "Can't reach the Roastify backend — this deployment was built without a backend URL configured, so it's trying to reach localhost. This needs to be fixed by whoever deployed the site."
+    );
+  }
+  return new Error(
+    `Can't reach the Roastify backend at ${new URL(url).origin}. It may be down, or there may be a network/CORS issue. Try again in a moment.`
+  );
+}
+
+/**
  * Robust fetch with exponential backoff. Only retries 429/5xx — retrying a
  * malformed request (4xx) won't help. Mirrors integrations/spotify.ts so
  * both platforms behave identically under flaky network conditions.
@@ -67,7 +90,7 @@ async function fetchWithRetry(
       }
       return response;
     } catch (error) {
-      if (i === retries - 1) throw error;
+      if (i === retries - 1) throw toFriendlyNetworkError(error, url);
       await new Promise((resolve) => setTimeout(resolve, delay * 2 ** i));
     }
   }
@@ -98,10 +121,12 @@ export async function fetchSteamData(profileInput: string): Promise<SteamRoastDa
 /** Sends normalized Steam data (or a raw profile as fallback) to the AI backend for a roast. */
 export async function getRoastFromBackend(
   steamData: SteamRoastData,
-  provider?: string
+  provider?: string,
+  intensity?: string
 ): Promise<{ roastText: string; provider?: string; steamData: SteamRoastData }> {
   const payload: Record<string, unknown> = { steamData };
   if (provider) payload.provider = provider;
+  if (intensity) payload.intensity = intensity;
 
   const response = await fetchWithRetry(`${getBackendUrl()}/api/steam/roast`, {
     method: "POST",
@@ -127,10 +152,11 @@ export async function getRoastFromBackend(
 /** Full flow: fetch real Steam data -> generate roast. */
 export async function completeSteamRoastFlow(
   profileInput: string,
-  provider?: string
+  provider?: string,
+  intensity?: string
 ): Promise<{ steamData: SteamRoastData; roastText: string; provider?: string }> {
   const steamData = await fetchSteamData(profileInput);
-  const { roastText, provider: usedProvider } = await getRoastFromBackend(steamData, provider);
+  const { roastText, provider: usedProvider } = await getRoastFromBackend(steamData, provider, intensity);
   return { steamData, roastText, provider: usedProvider };
 }
 

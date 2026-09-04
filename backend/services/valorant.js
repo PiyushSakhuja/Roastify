@@ -36,7 +36,24 @@ const REQUEST_TIMEOUT = 15000;
 const MAX_MATCHES = 15; // Keep the AI payload compact — aggregate stats, not raw histories.
 
 function isRiotConfigured() {
-    return Boolean(RIOT_RSO_CLIENT_ID && RIOT_RSO_CLIENT_SECRET && RIOT_API_KEY && RIOT_RSO_REDIRECT_URI);
+    return Boolean(
+        RIOT_RSO_CLIENT_ID &&
+        RIOT_RSO_CLIENT_SECRET &&
+        RIOT_API_KEY &&
+        RIOT_RSO_REDIRECT_URI &&
+        !isPlaceholderRedirectUri(RIOT_RSO_REDIRECT_URI)
+    );
+}
+
+/**
+ * Catches the single most common misconfiguration: copy-pasting the example
+ * value from .env.example (which uses your-backend.example.com as a stand-in)
+ * without replacing it with a real deployed URL. Without this check,
+ * isConfigured() would happily report "configured" and Riot would redirect
+ * users straight into a domain that doesn't exist after they log in.
+ */
+function isPlaceholderRedirectUri(uri) {
+    return /example\.com|your-backend|localhost:PORT|CHANGE_?ME/i.test(uri);
 }
 
 /**
@@ -393,6 +410,7 @@ function getMockPlayerData() {
 module.exports = {
     isRiotConfigured,
     getActiveProviderInfo,
+    isPlaceholderRedirectUri,
     generateState,
     buildAuthorizeUrl,
     exchangeCodeForToken,

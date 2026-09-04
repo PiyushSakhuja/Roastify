@@ -8,6 +8,7 @@ import {
   getGitHubRoast,
 } from "../integrations/github";
 import type { GitHubRoastData } from "../types/github";
+import type { RoastIntensity } from "../types/intensity";
 
 export type GitHubFlowStatus =
   | "idle"
@@ -45,6 +46,7 @@ const initialState: GitHubFlowState = {
  */
 export function useGitHubRoast() {
   const [state, setState] = useState<GitHubFlowState>(initialState);
+  const [intensity, setIntensity] = useState<RoastIntensity>("medium");
 
   useEffect(() => {
     const { code, error, errorDescription, stateValid } = parseGitHubCallback();
@@ -72,7 +74,7 @@ export function useGitHubRoast() {
 
     setState({ ...initialState, status: "authenticating" });
 
-    completeGitHubRoastFlow(code)
+    completeGitHubRoastFlow(code, undefined, intensity)
       .then(({ sessionId, roastText, provider, profile }) => {
         setState({
           status: "done",
@@ -90,6 +92,9 @@ export function useGitHubRoast() {
       .finally(() => {
         clearStoredAuthState();
       });
+    // Deliberately runs once on mount only (OAuth callback handling) — the
+    // captured `intensity` is whatever was selected before clicking Connect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const connect = useCallback(() => {
@@ -97,13 +102,14 @@ export function useGitHubRoast() {
   }, []);
 
   const regenerate = useCallback(
-    async (provider?: string) => {
+    async (provider?: string, overrideIntensity?: RoastIntensity) => {
       if (!state.sessionId) return;
       setState((prev) => ({ ...prev, status: "generating-roast" }));
       try {
         const { roastText, provider: usedProvider, profile } = await getGitHubRoast(
           state.sessionId,
-          provider
+          provider,
+          overrideIntensity || intensity
         );
         setState((prev) => ({
           ...prev,
@@ -117,10 +123,10 @@ export function useGitHubRoast() {
         setState((prev) => ({ ...prev, status: "error", errorMessage: message }));
       }
     },
-    [state.sessionId]
+    [state.sessionId, intensity]
   );
 
   const reset = useCallback(() => setState(initialState), []);
 
-  return { ...state, connect, regenerate, reset };
+  return { ...state, connect, regenerate, reset, intensity, setIntensity };
 }

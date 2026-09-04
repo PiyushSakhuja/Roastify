@@ -8,6 +8,9 @@ import { ValorantAgents } from "../components/valorant/ValorantAgents";
 import { ValorantMaps } from "../components/valorant/ValorantMaps";
 import { ValorantMatchHistory } from "../components/valorant/ValorantMatchHistory";
 import { ValorantRoastResult } from "../components/valorant/ValorantRoastResult";
+import { IntensitySelector } from "../components/shared/IntensitySelector";
+import { SentenceLine, getSentence } from "../components/shared/SentenceLine";
+import { VerdictCard } from "../components/shared/VerdictCard";
 
 const LOADING_MESSAGES = [
   "Reviewing your match history...",
@@ -96,6 +99,11 @@ export function ValorantRoastPage() {
               We'll ask Riot to let you sign in and share your own match history — then hand your
               real stats to an AI that isn't going to be nice about it.
             </p>
+            <IntensitySelector
+              value={valorant.intensity}
+              onChange={valorant.setIntensity}
+              accent="valorant"
+            />
             <button
               type="button"
               onClick={valorant.connect}
@@ -208,12 +216,23 @@ export function ValorantRoastPage() {
                 provider={valorant.provider}
                 data={valorant.profile}
               />
+              <div className="mt-3">
+                <SentenceLine platform="valorant" seed={valorant.roastText} />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-line bg-charcoal/80 p-5">
+              <IntensitySelector
+                value={valorant.intensity}
+                onChange={valorant.setIntensity}
+                accent="valorant"
+              />
             </div>
 
             <div className="flex flex-wrap gap-2.5 pt-2">
               <button
                 type="button"
-                onClick={() => valorant.regenerate()}
+                onClick={() => valorant.regenerate(undefined, valorant.intensity)}
                 className="rounded-md bg-paper px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-white"
               >
                 Roast Me Again
@@ -241,6 +260,19 @@ export function ValorantRoastPage() {
               >
                 Back to Dashboard
               </Link>
+            </div>
+
+            <div className="border-t border-line pt-6">
+              <VerdictCard
+                platformName="VALORANT"
+                accentColor="#FF4655"
+                roastText={valorant.roastText}
+                evidence={[
+                  `${valorant.profile.matchesAnalyzed} matches analyzed`,
+                  valorant.profile.isMock ? "Development preview data" : "",
+                ].filter(Boolean)}
+                sentence={getSentence("valorant", valorant.roastText)}
+              />
             </div>
           </div>
         )}

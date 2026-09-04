@@ -7,6 +7,7 @@ import {
   MovieEmptyHistoryError,
   type MovieRoastData,
 } from "../integrations/movies";
+import type { RoastIntensity } from "../types/intensity";
 
 export type MovieFlowStatus =
   | "idle"
@@ -42,73 +43,81 @@ const initialState: MovieFlowState = {
  */
 export function useMovieRoast() {
   const [state, setState] = useState<MovieFlowState>(initialState);
+  const [intensity, setIntensity] = useState<RoastIntensity>("medium");
 
-  const connect = useCallback(async (profileInput: string, provider?: string) => {
-    setState({ ...initialState, status: "fetching-profile" });
-    try {
-      const movieData = await fetchMovieData(profileInput);
-      setState((prev) => ({ ...prev, status: "generating-roast", movieData }));
+  const connect = useCallback(
+    async (profileInput: string, provider?: string) => {
+      setState({ ...initialState, status: "fetching-profile" });
+      try {
+        const movieData = await fetchMovieData(profileInput);
+        setState((prev) => ({ ...prev, status: "generating-roast", movieData }));
 
-      const { roastText, provider: usedProvider, movieData: finalData } =
-        await getRoastFromBackend(movieData, provider);
+        const { roastText, provider: usedProvider, movieData: finalData } =
+          await getRoastFromBackend(movieData, provider, intensity);
 
-      setState({
-        status: "done",
-        roastText,
-        movieData: finalData,
-        provider: usedProvider ?? null,
-        errorMessage: null,
-      });
-    } catch (err) {
-      if (err instanceof MovieProfilePrivateError) {
-        setState({ ...initialState, status: "private", errorMessage: err.message });
-        return;
+        setState({
+          status: "done",
+          roastText,
+          movieData: finalData,
+          provider: usedProvider ?? null,
+          errorMessage: null,
+        });
+      } catch (err) {
+        if (err instanceof MovieProfilePrivateError) {
+          setState({ ...initialState, status: "private", errorMessage: err.message });
+          return;
+        }
+        if (err instanceof MovieProfileNotFoundError) {
+          setState({ ...initialState, status: "not-found", errorMessage: err.message });
+          return;
+        }
+        if (err instanceof MovieEmptyHistoryError) {
+          setState({ ...initialState, status: "empty", errorMessage: err.message });
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        setState({ ...initialState, status: "error", errorMessage: message });
       }
-      if (err instanceof MovieProfileNotFoundError) {
-        setState({ ...initialState, status: "not-found", errorMessage: err.message });
-        return;
-      }
-      if (err instanceof MovieEmptyHistoryError) {
-        setState({ ...initialState, status: "empty", errorMessage: err.message });
-        return;
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      setState({ ...initialState, status: "error", errorMessage: message });
-    }
-  }, []);
+    },
+    [intensity]
+  );
 
   /**
    * For sources that normalize entirely client-side (Letterboxd CSV, Top4)
    * — skips the fetch step and goes straight to the roast, since the data
    * is already in hand.
    */
-  const connectWithData = useCallback(async (movieData: MovieRoastData, provider?: string) => {
-    setState({ ...initialState, status: "generating-roast", movieData });
-    try {
-      const { roastText, provider: usedProvider, movieData: finalData } =
-        await getRoastFromBackend(movieData, provider);
+  const connectWithData = useCallback(
+    async (movieData: MovieRoastData, provider?: string) => {
+      setState({ ...initialState, status: "generating-roast", movieData });
+      try {
+        const { roastText, provider: usedProvider, movieData: finalData } =
+          await getRoastFromBackend(movieData, provider, intensity);
 
-      setState({
-        status: "done",
-        roastText,
-        movieData: finalData,
-        provider: usedProvider ?? null,
-        errorMessage: null,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setState({ ...initialState, status: "error", errorMessage: message });
-    }
-  }, []);
+        setState({
+          status: "done",
+          roastText,
+          movieData: finalData,
+          provider: usedProvider ?? null,
+          errorMessage: null,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setState({ ...initialState, status: "error", errorMessage: message });
+      }
+    },
+    [intensity]
+  );
 
   const regenerate = useCallback(
-    async (provider?: string) => {
+    async (provider?: string, overrideIntensity?: RoastIntensity) => {
       if (!state.movieData) return;
       setState((prev) => ({ ...prev, status: "generating-roast" }));
       try {
         const { roastText, provider: usedProvider } = await getRoastFromBackend(
           state.movieData,
-          provider
+          provider,
+          overrideIntensity || intensity
         );
         setState((prev) => ({
           ...prev,
@@ -121,10 +130,10 @@ export function useMovieRoast() {
         setState((prev) => ({ ...prev, status: "error", errorMessage: message }));
       }
     },
-    [state.movieData]
+    [state.movieData, intensity]
   );
 
   const reset = useCallback(() => setState(initialState), []);
 
-  return { ...state, connect, connectWithData, regenerate, reset };
+  return { ...state, connect, connectWithData, regenerate, reset, intensity, setIntensity };
 }
