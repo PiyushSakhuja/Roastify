@@ -85,8 +85,7 @@ export function RoastModal({ platform, onClose }: RoastModalProps) {
               </div>
 
               <p className="text-balance text-lg leading-relaxed text-paper">
-                {platform.roastPreview ??
-                  "This exhibit hasn't been connected yet. No data, no verdict."}
+                Connect this platform to generate a real roast from your data.
               </p>
 
               <div className="mt-6 flex gap-2.5">
